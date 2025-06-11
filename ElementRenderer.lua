@@ -1,10 +1,7 @@
 --[[
-    Phase 3: The Element Renderer
-    This module is responsible for creating the visual representation of elements.
-    - It listens for signals from the Engine (ElementAdded, ElementRemoved, etc.).
-    - It contains functions to render each type of element (Button, Toggle, Slider, Dropdown).
-    - It connects UI events (e.g., a button click) back to the Engine to execute code.
-    - It updates the visual state of elements when their values change programmatically.
+    Nexus-Lua GUI System | Phase 3: The Element Renderer
+    Purpose: Creates the visual representation of elements (Buttons, Toggles, etc.).
+    Connects UI events to the Engine and updates visuals based on state changes.
 ]]
 
 local ElementRenderer = {}
@@ -12,18 +9,26 @@ local ElementRenderer = {}
 -- Roblox Services
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
 
 -- Module State
 local Engine
-local contentContainer -- The parent frame for all content pages, provided by WindowManager
-local renderedElements = {} -- Stores the actual GUI objects, indexed by elementID
+local contentPagesContainer -- The parent frame for all content pages, from WindowManager
+local renderedElements = {} -- Stores GUI objects and update functions, indexed by elementID
 
 -- Configuration
 local ELEMENT_HEIGHT = 40
 local ELEMENT_PADDING = 10
+local THEME_DEFAULTS = {
+    Element = Color3.fromRGB(60, 60, 60),
+    Text = Color3.fromRGB(240, 240, 240),
+    Accent = Color3.fromRGB(85, 125, 255),
+    Inactive = Color3.fromRGB(90, 90, 90),
+    Subtle = Color3.fromRGB(40, 40, 40)
+}
 
 -- //////////////////////////////////////////////////////////////////////////////////
--- // 1. INSTANCE CREATION UTILITIES
+-- // 1. UTILITIES
 -- //////////////////////////////////////////////////////////////////////////////////
 
 local function create(instanceType, properties)
@@ -34,23 +39,41 @@ local function create(instanceType, properties)
     return inst
 end
 
+local function tween(instance, goal, duration)
+    duration = duration or 0.2
+    local tweenInfo = TweenInfo.new(duration, Enum.EasingStyle.Cubic, Enum.EasingDirection.Out)
+    local t = TweenService:Create(instance, tweenInfo, goal)
+    t:Play()
+    return t
+end
+
+-- //////////////////////////////////////////////////////////////////////////////////
+-- // 2. BASE ELEMENT FRAME & RENDERER FUNCTIONS
+-- //////////////////////////////////////////////////////////////////////////////////
+
 local function createBaseElementFrame(elementData)
     local frame = create("Frame", {
         Name = elementData.uniqueID,
-        BackgroundColor3 = Color3.fromRGB(60, 60, 60),
+        BackgroundColor3 = THEME_DEFAULTS.Element,
         BorderSizePixel = 0,
-        Size = UDim2.new(1, -ELEMENT_PADDING * 2, 0, ELEMENT_HEIGHT),
-        LayoutOrder = os.time(), -- Simple way to order by creation
+        Size = UDim2.new(1, 0, 0, ELEMENT_HEIGHT),
+        LayoutOrder = os.time(),
     })
     create("UICorner", { CornerRadius = UDim.new(0, 4), Parent = frame })
     
+    create("UIPadding", {
+        Parent = frame,
+        PaddingLeft = UDim.new(0, ELEMENT_PADDING),
+        PaddingRight = UDim.new(0, ELEMENT_PADDING)
+    })
+
     create("TextLabel", {
         Name = "Label",
         Parent = frame,
-        Size = UDim2.new(0.4, 0, 1, 0),
-        Position = UDim2.new(0, ELEMENT_PADDING, 0, 0),
+        Size = UDim2.new(0.5, 0, 1, 0),
+        BackgroundTransparency = 1,
         Text = elementData.label,
-        TextColor3 = Color3.fromRGB(240, 240, 240),
+        TextColor3 = THEME_DEFAULTS.Text,
         Font = Enum.Font.SourceSans,
         TextSize = 16,
         TextXAlignment = Enum.TextXAlignment.Left,
@@ -59,31 +82,26 @@ local function createBaseElementFrame(elementData)
     return frame
 end
 
--- //////////////////////////////////////////////////////////////////////////////////
--- // 2. RENDERER FUNCTIONS FOR EACH ELEMENT TYPE
--- //////////////////////////////////////////////////////////////////////////////////
-
 local function renderButton(elementData)
     local frame = createBaseElementFrame(elementData)
     
     local button = create("TextButton", {
         Name = "ButtonControl",
         Parent = frame,
-        Size = UDim2.new(0.5, -ELEMENT_PADDING, 1, -10),
-        Position = UDim2.new(0.5, 0, 0.5, 0),
-        AnchorPoint = Vector2.new(0, 0.5),
-        BackgroundColor3 = Color3.fromRGB(80, 80, 80),
-        Text = elementData.label,
+        Size = UDim2.new(0.4, 0, 1, -10),
+        Position = UDim2.new(1, 0, 0.5, 0),
+        AnchorPoint = Vector2.new(1, 0.5),
+        BackgroundColor3 = THEME_DEFAULTS.Accent,
+        Text = "Execute",
         TextColor3 = Color3.fromRGB(255, 255, 255),
         Font = Enum.Font.SourceSansSemibold,
         TextSize = 16,
     })
     create("UICorner", { CornerRadius = UDim.new(0, 4), Parent = button })
     
-    -- Hide the base label as the button has its own
-    frame.Label.Visible = false
-    
     button.MouseButton1Click:Connect(function()
+        tween(button, {Size = UDim2.new(0.38, 0, 1, -12)}, 0.1):Completed:Wait()
+        tween(button, {Size = UDim2.new(0.4, 0, 1, -10)}, 0.1)
         Engine.ExecuteCode(elementData.uniqueID)
     end)
     
@@ -96,10 +114,10 @@ local function renderToggle(elementData)
     local switch = create("TextButton", {
         Name = "ToggleControl",
         Parent = frame,
-        Size = UDim2.new(0, 60, 0, ELEMENT_HEIGHT - 16),
-        Position = UDim2.new(1, -ELEMENT_PADDING - 60, 0.5, 0),
-        AnchorPoint = Vector2.new(0, 0.5),
-        BackgroundColor3 = Color3.fromRGB(40, 40, 40),
+        Size = UDim2.new(0, 50, 0, ELEMENT_HEIGHT - 16),
+        Position = UDim2.new(1, 0, 0.5, 0),
+        AnchorPoint = Vector2.new(1, 0.5),
+        BackgroundColor3 = THEME_DEFAULTS.Subtle,
         Text = "",
     })
     create("UICorner", { CornerRadius = UDim.new(1, 0), Parent = switch })
@@ -107,25 +125,23 @@ local function renderToggle(elementData)
     local knob = create("Frame", {
         Name = "Knob",
         Parent = switch,
-        Size = UDim2.new(0, 24, 0, 24),
+        Size = UDim2.new(0, 20, 0, 20),
         AnchorPoint = Vector2.new(0.5, 0.5),
-        Position = UDim2.new(0, 15, 0.5, 0),
         BackgroundColor3 = Color3.fromRGB(200, 200, 200),
         BorderSizePixel = 0,
     })
     create("UICorner", { CornerRadius = UDim.new(1, 0), Parent = knob })
 
     local function updateVisuals(value, withAnimation)
-        local goalPosition = value and UDim2.new(0, 45, 0.5, 0) or UDim2.new(0, 15, 0.5, 0)
-        local goalColor = value and Color3.fromRGB(70, 180, 90) or Color3.fromRGB(150, 150, 150)
+        local goalPos = value and UDim2.new(1, -12, 0.5, 0) or UDim2.new(0, 12, 0.5, 0)
+        local switchColor = value and THEME_DEFAULTS.Accent or THEME_DEFAULTS.Subtle
         
         if withAnimation then
-            local tweenInfo = TweenInfo.new(0.2, Enum.EasingStyle.Cubic, Enum.EasingDirection.Out)
-            TweenService:Create(knob, tweenInfo, { Position = goalPosition }):Play()
-            TweenService:Create(knob, tweenInfo, { BackgroundColor3 = goalColor }):Play()
+            tween(knob, { Position = goalPos })
+            tween(switch, { BackgroundColor3 = switchColor })
         else
-            knob.Position = goalPosition
-            knob.BackgroundColor3 = goalColor
+            knob.Position = goalPos
+            switch.BackgroundColor3 = switchColor
         end
     end
     
@@ -138,10 +154,7 @@ local function renderToggle(elementData)
     
     updateVisuals(elementData.value, false)
     
-    renderedElements[elementData.uniqueID] = {
-        instance = frame,
-        updateFunc = updateVisuals,
-    }
+    renderedElements[elementData.uniqueID] = { instance = frame, updateFunc = updateVisuals }
     return frame
 end
 
@@ -152,41 +165,51 @@ local function renderSlider(elementData)
     local valueLabel = create("TextLabel", {
         Name = "ValueLabel",
         Parent = frame,
-        Size = UDim2.new(0, 50, 1, 0),
-        Position = UDim2.new(1, -ELEMENT_PADDING - 50, 0, 0),
+        Size = UDim2.new(0, 60, 1, 0),
+        Position = UDim2.new(1, 0, 0, 0),
+        AnchorPoint = Vector2.new(1, 0),
         BackgroundTransparency = 1,
         Font = Enum.Font.SourceSans,
         TextSize = 15,
-        TextColor3 = Color3.fromRGB(200, 200, 200),
-        Text = tostring(elementData.value) .. (props.suffix or ""),
+        TextColor3 = THEME_DEFAULTS.Text,
     })
     
     local track = create("Frame", {
         Name = "Track",
         Parent = frame,
-        Size = UDim2.new(0.5, -ELEMENT_PADDING - 50, 0, 8),
-        Position = UDim2.new(0.5, -25, 0.5, 0),
+        Size = UDim2.new(1, -80, 0, 6),
+        Position = UDim2.new(0, 0, 0.5, 0),
         AnchorPoint = Vector2.new(0, 0.5),
-        BackgroundColor3 = Color3.fromRGB(40, 40, 40),
+        BackgroundColor3 = THEME_DEFAULTS.Subtle,
         BorderSizePixel = 0,
     })
     create("UICorner", { CornerRadius = UDim.new(1, 0), Parent = track })
     
-    local progress = create("Frame", {
-        Name = "Progress",
-        Parent = track,
-        Size = UDim2.new(0, 0, 1, 0),
-        BackgroundColor3 = Color3.fromRGB(70, 120, 220),
-        BorderSizePixel = 0,
-    })
-    create("UICorner", { CornerRadius = UDim.new(1, 0), Parent = progress })
+    local progress = create("Frame", { Name = "Progress", Parent = track, BackgroundColor3 = THEME_DEFAULTS.Accent })
+    create("UICorner", { Parent = progress })
     
+    local knob = create("Frame", { Name = "Knob", Parent = track, Size = UDim2.fromOffset(16,16), AnchorPoint = Vector2.new(0.5,0.5), BackgroundColor3 = Color3.fromRGB(255,255,255) })
+    create("UICorner", {CornerRadius = UDim.new(1,0), Parent = knob})
+
     local isDragging = false
     
-    local function updateVisuals(value)
+    local function updateVisuals(value, withAnimation)
         local percentage = (value - props.minValue) / (props.maxValue - props.minValue)
-        progress.Size = UDim2.new(percentage, 0, 1, 0)
-        valueLabel.Text = tostring(math.floor(value / props.increment + 0.5) * props.increment) .. (props.suffix or "")
+        local goal = {
+            Size = UDim2.new(percentage, 0, 1, 0),
+            Position = UDim2.new(percentage, 0, 0.5, 0) -- For the knob
+        }
+        
+        if withAnimation then
+            tween(progress, {Size = goal.Size})
+            tween(knob, {Position = goal.Position})
+        else
+            progress.Size = goal.Size
+            knob.Position = goal.Position
+        end
+        
+        local roundedValue = math.floor(value / props.increment + 0.5) * props.increment
+        valueLabel.Text = tostring(roundedValue) .. (props.suffix or "")
     end
     
     local function onInput(input)
@@ -196,9 +219,10 @@ local function renderSlider(elementData)
         local rawValue = props.minValue + (props.maxValue - props.minValue) * percentage
         local steppedValue = math.clamp(math.floor(rawValue / props.increment + 0.5) * props.increment, props.minValue, props.maxValue)
 
-        if Engine.GetElement(elementData.uniqueID).value ~= steppedValue then
-            Engine.GetElement(elementData.uniqueID).value = steppedValue
-            updateVisuals(steppedValue)
+        local element = Engine.GetElement(elementData.uniqueID)
+        if element.value ~= steppedValue then
+            element.value = steppedValue
+            updateVisuals(steppedValue, false) -- No animation while dragging
             Engine.ExecuteCode(elementData.uniqueID)
         end
     end
@@ -210,41 +234,134 @@ local function renderSlider(elementData)
         end
     end)
     
-    UserInputService.InputChanged:Connect(function(input)
+    local inputChangedConn, inputEndedConn
+    inputChangedConn = UserInputService.InputChanged:Connect(function(input)
         if isDragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
             onInput(input)
         end
     end)
-    
-    UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+    inputEndedConn = UserInputService.InputEnded:Connect(function(input)
+        if isDragging and (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then
             isDragging = false
         end
     end)
+    
+    frame.Destroying:Connect(function()
+        if inputChangedConn then inputChangedConn:Disconnect() end
+        if inputEndedConn then inputEndedConn:Disconnect() end
+    end)
 
-    updateVisuals(elementData.value)
+    updateVisuals(elementData.value, false)
 
-    renderedElements[elementData.uniqueID] = {
-        instance = frame,
-        updateFunc = updateVisuals,
-    }
+    frame.Label.Size = UDim2.new(0.5, -70, 1, 0)
+    track.Size = UDim2.new(0.5, -10, 0, 6)
+    track.Position = UDim2.new(0.5, -60, 0.5, 0)
+
+    renderedElements[elementData.uniqueID] = { instance = frame, updateFunc = updateVisuals }
     return frame
 end
 
+
+local function renderDropdown(elementData)
+    local frame = createBaseElementFrame(elementData)
+    local props = elementData.properties
+    local isOpen = false
+
+    local dropdownButton = create("TextButton", {
+        Name = "DropdownButton",
+        Parent = frame,
+        Size = UDim2.new(0.5, 0, 1, -10),
+        Position = UDim2.new(1, 0, 0.5, 0),
+        AnchorPoint = Vector2.new(1, 0.5),
+        BackgroundColor3 = THEME_DEFAULTS.Subtle,
+        Text = tostring(elementData.value),
+        TextColor3 = THEME_DEFAULTS.Text,
+        Font = Enum.Font.SourceSans,
+        TextSize = 14,
+    })
+    create("UICorner", { Parent = dropdownButton })
+
+    local optionsList = create("ScrollingFrame", {
+        Name = "OptionsList",
+        Parent = frame,
+        Visible = false,
+        Size = UDim2.new(0.5, 0, 0, 120),
+        Position = UDim2.new(1, 0, 1, 5),
+        AnchorPoint = Vector2.new(1, 0),
+        BackgroundColor3 = THEME_DEFAULTS.Subtle,
+        BorderSizePixel = 0,
+        ZIndex = frame.ZIndex + 1,
+        CanvasSize = UDim2.new(),
+        AutomaticCanvasSize = Enum.AutomaticSize.Y,
+        ScrollBarThickness = 4,
+    })
+    create("UICorner", { Parent = optionsList })
+    create("UIListLayout", { Parent = optionsList, Padding = UDim.new(0,2) })
+
+    local function updateOptions()
+        optionsList:ClearAllChildren()
+        create("UIListLayout", { Parent = optionsList, Padding = UDim.new(0,2) }) -- Re-add layout
+        for _, optionText in ipairs(props.options or {}) do
+            local optionButton = create("TextButton", {
+                Name = optionText,
+                Parent = optionsList,
+                Size = UDim2.new(1, 0, 0, 25),
+                BackgroundColor3 = THEME_DEFAULTS.Subtle,
+                Text = optionText,
+                TextColor3 = THEME_DEFAULTS.Text,
+                Font = Enum.Font.SourceSans,
+                TextSize = 14,
+            })
+            optionButton.MouseEnter:Connect(function() optionButton.BackgroundColor3 = THEME_DEFAULTS.Element end)
+            optionButton.MouseLeave:Connect(function() optionButton.BackgroundColor3 = THEME_DEFAULTS.Subtle end)
+            
+            optionButton.MouseButton1Click:Connect(function()
+                local element = Engine.GetElement(elementData.uniqueID)
+                element.value = optionText
+                dropdownButton.Text = optionText
+                isOpen = false
+                tween(frame, { Size = UDim2.new(1, 0, 0, ELEMENT_HEIGHT) })
+                optionsList.Visible = false
+                Engine.ExecuteCode(elementData.uniqueID)
+            end)
+        end
+    end
+    
+    dropdownButton.MouseButton1Click:Connect(function()
+        isOpen = not isOpen
+        if isOpen then
+            updateOptions()
+            optionsList.Visible = true
+            local listHeight = optionsList.AbsoluteContentSize.Y + 4
+            tween(frame, { Size = UDim2.new(1, 0, 0, ELEMENT_HEIGHT + listHeight + 5) })
+        else
+            tween(frame, { Size = UDim2.new(1, 0, 0, ELEMENT_HEIGHT) })
+            task.wait(0.2)
+            optionsList.Visible = false
+        end
+    end)
+    
+    updateOptions()
+
+    renderedElements[elementData.uniqueID] = { instance = frame }
+    return frame
+end
+
+
 -- //////////////////////////////////////////////////////////////////////////////////
--- // 3. CORE LOGIC
+-- // 3. CORE LOGIC & INITIALIZATION
 -- //////////////////////////////////////////////////////////////////////////////////
 
 local renderDispatch = {
     Button = renderButton,
     Toggle = renderToggle,
     Slider = renderSlider,
-    -- Dropdown can be added here in the same pattern
+    Dropdown = renderDropdown
 }
 
 local function onElementAdded(elementData)
     local tabID = elementData.targetTabID
-    local contentPage = contentContainer:FindFirstChild(tabID)
+    local contentPage = contentPagesContainer:FindFirstChild(tabID)
     if not contentPage then
         warn("[Renderer] Could not find content page for tab ID:", tabID)
         return
@@ -255,7 +372,6 @@ local function onElementAdded(elementData)
         local elementInstance = renderFunc(elementData)
         elementInstance.Parent = contentPage:FindFirstChild("LayoutFrame")
         
-        -- Store a reference to the top-level frame instance.
         if not renderedElements[elementData.uniqueID] then
              renderedElements[elementData.uniqueID] = { instance = elementInstance }
         end
@@ -265,7 +381,7 @@ local function onElementAdded(elementData)
 end
 
 local function onElementRemoved(elementID)
-    if renderedElements[elementID] then
+    if renderedElements[elementID] and renderedElements[elementID].instance then
         renderedElements[elementID].instance:Destroy()
         renderedElements[elementID] = nil
     end
@@ -278,32 +394,33 @@ local function onElementValueChanged(elementID, newValue)
     end
 end
 
+local function onElementUpdated(elementID, elementData)
+    onElementRemoved(elementID)
+    onElementAdded(elementData)
+end
+
 function ElementRenderer.Init(engineRef, containers)
     Engine = engineRef
-    contentContainer = containers.contentContainer
-    
-    -- Create content pages for any pre-existing tabs
-    for _, tabData in ipairs(Engine.Registry.Tabs) do
-        ElementRenderer.CreateContentPage(tabData)
-    end
+    contentPagesContainer = containers.contentPagesContainer
     
     -- Connect to Engine signals
     Engine.Signals.ElementAdded:Connect(onElementAdded)
     Engine.Signals.ElementRemoved:Connect(onElementRemoved)
+    Engine.Signals.ElementUpdated:Connect(onElementUpdated)
     Engine.Signals.ElementValueChanged:Connect(onElementValueChanged)
 end
 
 -- This function will be called by the main script when a tab is created.
 function ElementRenderer.CreateContentPage(tabData)
-    local existing = contentContainer:FindFirstChild(tabData.uniqueID)
+    local existing = contentPagesContainer:FindFirstChild(tabData.uniqueID)
     if existing then return existing end
 
     local page = create("Frame", {
         Name = tabData.uniqueID,
-        Parent = contentContainer,
+        Parent = contentPagesContainer,
         Size = UDim2.new(1, 0, 1, 0),
         BackgroundTransparency = 1,
-        Visible = false, -- Will be made visible by tab selection logic
+        Visible = false,
     })
 
     local scrollingFrame = create("ScrollingFrame", {
@@ -311,24 +428,30 @@ function ElementRenderer.CreateContentPage(tabData)
         Parent = page,
         Size = UDim2.new(1, 0, 1, 0),
         BackgroundTransparency = 1,
-        CanvasSize = UDim2.new(0, 0, 0, 0), -- Let UIListLayout manage this
+        CanvasSize = UDim2.new(),
+        AutomaticCanvasSize = Enum.AutomaticSize.Y,
         BorderSizePixel = 0,
         ScrollBarImageColor3 = Color3.fromRGB(150, 150, 150),
-        ScrollBarThickness = 6,
+        ScrollBarThickness = 5,
     })
 
     create("UIListLayout", {
         Parent = scrollingFrame,
         SortOrder = Enum.SortOrder.LayoutOrder,
-        Padding = UDim.new(0, ELEMENT_PADDING),
+        Padding = UDim.new(0, 5),
         HorizontalAlignment = Enum.HorizontalAlignment.Center,
+    })
+    create("UIPadding", {
+        Parent = scrollingFrame,
+        PaddingLeft = UDim.new(0,10),
+        PaddingRight = UDim.new(0,10),
     })
     
     return page
 end
 
 function ElementRenderer.DestroyContentPage(tabID)
-    local page = contentContainer:FindFirstChild(tabID)
+    local page = contentPagesContainer:FindFirstChild(tabID)
     if page then
         page:Destroy()
     end
