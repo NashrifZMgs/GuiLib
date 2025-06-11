@@ -1,30 +1,25 @@
 --[[
-    Nexus-Lua GUI System | Phase 3: The Element Renderer
-    Purpose: Creates the visual representation of elements (Buttons, Toggles, etc.).
-    Connects UI events to the Engine and updates visuals based on state changes.
+    Nexus-Lua GUI System | Phase 4: The Settings Panel
+    Purpose: Builds the UI for creating, editing, and managing tabs and elements.
+    This is the command center for the user to build their own GUI.
 ]]
 
-local ElementRenderer = {}
-
--- Roblox Services
-local TweenService = game:GetService("TweenService")
-local UserInputService = game:GetService("UserInputService")
-local RunService = game:GetService("RunService")
+local SettingsPanel = {}
 
 -- Module State
 local Engine
-local contentPagesContainer -- The parent frame for all content pages, from WindowManager
-local renderedElements = {} -- Stores GUI objects and update functions, indexed by elementID
+local settingsContainer -- The parent frame provided by WindowManager
+local activeEditElementID = nil
+local elementTypes = {"Button", "Toggle", "Slider", "Dropdown"}
 
 -- Configuration
-local ELEMENT_HEIGHT = 40
-local ELEMENT_PADDING = 10
+local SECTION_PADDING = 15
+local INPUT_HEIGHT = 30
 local THEME_DEFAULTS = {
-    Element = Color3.fromRGB(60, 60, 60),
     Text = Color3.fromRGB(240, 240, 240),
+    Subtle = Color3.fromRGB(40, 40, 40),
     Accent = Color3.fromRGB(85, 125, 255),
-    Inactive = Color3.fromRGB(90, 90, 90),
-    Subtle = Color3.fromRGB(40, 40, 40)
+    Destructive = Color3.fromRGB(180, 70, 70),
 }
 
 -- //////////////////////////////////////////////////////////////////////////////////
@@ -39,422 +34,286 @@ local function create(instanceType, properties)
     return inst
 end
 
-local function tween(instance, goal, duration)
-    duration = duration or 0.2
-    local tweenInfo = TweenInfo.new(duration, Enum.EasingStyle.Cubic, Enum.EasingDirection.Out)
-    local t = TweenService:Create(instance, tweenInfo, goal)
-    t:Play()
-    return t
-end
-
--- //////////////////////////////////////////////////////////////////////////////////
--- // 2. BASE ELEMENT FRAME & RENDERER FUNCTIONS
--- //////////////////////////////////////////////////////////////////////////////////
-
-local function createBaseElementFrame(elementData)
+local function createSection(name, parent)
     local frame = create("Frame", {
-        Name = elementData.uniqueID,
-        BackgroundColor3 = THEME_DEFAULTS.Element,
-        BorderSizePixel = 0,
-        Size = UDim2.new(1, 0, 0, ELEMENT_HEIGHT),
-        LayoutOrder = os.time(),
-    })
-    create("UICorner", { CornerRadius = UDim.new(0, 4), Parent = frame })
-    
-    create("UIPadding", {
-        Parent = frame,
-        PaddingLeft = UDim.new(0, ELEMENT_PADDING),
-        PaddingRight = UDim.new(0, ELEMENT_PADDING)
-    })
-
-    create("TextLabel", {
-        Name = "Label",
-        Parent = frame,
-        Size = UDim2.new(0.5, 0, 1, 0),
+        Name = name .. "Section",
+        Parent = parent,
         BackgroundTransparency = 1,
-        Text = elementData.label,
+        AutomaticSize = Enum.AutomaticSize.Y,
+        Size = UDim2.new(1, 0, 0, 0), -- Placeholder size
+    })
+    
+    local listLayout = create("UIListLayout", {
+        Parent = frame,
+        SortOrder = Enum.SortOrder.LayoutOrder,
+        Padding = UDim.new(0, 8),
+    })
+    
+    create("TextLabel", {
+        Name = "Header",
+        Parent = frame,
+        Size = UDim2.new(1, 0, 0, 25),
+        Text = name,
+        Font = Enum.Font.SourceSansBold,
+        TextSize = 20,
         TextColor3 = THEME_DEFAULTS.Text,
-        Font = Enum.Font.SourceSans,
-        TextSize = 16,
         TextXAlignment = Enum.TextXAlignment.Left,
     })
     
-    return frame
+    create("Frame", { Name="Divider", Parent=frame, Size=UDim2.new(1,0,0,1), BackgroundColor3=THEME_DEFAULTS.Subtle, BorderSizePixel=0 })
+
+    return frame, listLayout
 end
 
-local function renderButton(elementData)
-    local frame = createBaseElementFrame(elementData)
-    
-    local button = create("TextButton", {
-        Name = "ButtonControl",
-        Parent = frame,
-        Size = UDim2.new(0.4, 0, 1, -10),
-        Position = UDim2.new(1, 0, 0.5, 0),
-        AnchorPoint = Vector2.new(1, 0.5),
-        BackgroundColor3 = THEME_DEFAULTS.Accent,
-        Text = "Execute",
-        TextColor3 = Color3.fromRGB(255, 255, 255),
-        Font = Enum.Font.SourceSansSemibold,
-        TextSize = 16,
+local function createTextButton(text, parent)
+     local btn = create("TextButton", {
+        Name = text, Parent = parent, Size = UDim2.new(0, 150, 0, 35), BackgroundColor3 = THEME_DEFAULTS.Accent,
+        Text = text, TextColor3 = Color3.fromRGB(255, 255, 255), Font = Enum.Font.SourceSansSemibold, TextSize = 16,
     })
-    create("UICorner", { CornerRadius = UDim.new(0, 4), Parent = button })
+    create("UICorner", { CornerRadius = UDim.new(0, 4), Parent = btn })
+    return btn
+end
+
+local function createTextInput(placeholder, parent)
+    local frame = create("Frame", {
+        Name = placeholder .. "InputFrame", Parent = parent, Size = UDim2.new(1, 0, 0, INPUT_HEIGHT),
+        BackgroundColor3 = THEME_DEFAULTS.Subtle, BorderSizePixel = 0,
+    })
+    create("UICorner", { CornerRadius = UDim.new(0, 4), Parent = frame })
+
+    local textBox = create("TextBox", {
+        Name = "Input", Parent = frame, Size = UDim2.new(1, -20, 1, 0), Position = UDim2.new(0.5, 0, 0.5, 0),
+        AnchorPoint = Vector2.new(0.5, 0.5), BackgroundTransparency = 1, PlaceholderText = placeholder,
+        PlaceholderColor3 = Color3.fromRGB(150, 150, 150), Text = "", TextColor3 = Color3.fromRGB(220, 220, 220),
+        Font = Enum.Font.SourceSans, TextSize = 14, ClearTextOnFocus = false,
+    })
+    return frame, textBox
+end
+
+
+-- //////////////////////////////////////////////////////////////////////////////////
+-- // 2. TAB MANAGER
+-- //////////////////////////////////////////////////////////////////////////////////
+
+local function buildTabManager(parent)
+    local section, layout = createSection("Tab Manager", parent)
     
-    button.MouseButton1Click:Connect(function()
-        tween(button, {Size = UDim2.new(0.38, 0, 1, -12)}, 0.1):Completed:Wait()
-        tween(button, {Size = UDim2.new(0.4, 0, 1, -10)}, 0.1)
-        Engine.ExecuteCode(elementData.uniqueID)
+    local _, tabNameInput = createTextInput("New Tab Name", section)
+    local addTabBtn = createTextButton("Add Tab", section)
+
+    addTabBtn.MouseButton1Click:Connect(function()
+        local name = tabNameInput.Text
+        if name and name:match("%S") then
+            Engine.AddTab({
+                uniqueID = name:lower():gsub("%s+", "_"),
+                label = name,
+            })
+            tabNameInput.Text = ""
+        end
     end)
     
-    return frame
+    -- Dynamically add/remove tab management rows
+    local function addTabRow(tabData)
+        local row = create("Frame", {Name=tabData.uniqueID, Parent=section, Size=UDim2.new(1,0,0,30), BackgroundTransparency=1})
+        create("TextLabel", {Parent=row, Size=UDim2.new(0.7,0,1,0), Text=tabData.label, TextColor3=THEME_DEFAULTS.Text, TextXAlignment=Enum.TextXAlignment.Left})
+        local removeBtn = createTextButton("Remove", row)
+        removeBtn.Size, removeBtn.Position, removeBtn.AnchorPoint = UDim2.new(0.2,0,1,0), UDim2.new(1,0,0.5,0), Vector2.new(1,0.5)
+        removeBtn.BackgroundColor3 = THEME_DEFAULTS.Destructive
+        removeBtn.MouseButton1Click:Connect(function() Engine.RemoveTab(tabData.uniqueID) end)
+    end
+    
+    Engine.Signals.TabAdded:Connect(addTabRow)
+    Engine.Signals.TabRemoved:Connect(function(tabID) if section:FindFirstChild(tabID) then section[tabID]:Destroy() end end)
+    
+    for _, tabData in ipairs(Engine.Registry.Tabs) do addTabRow(tabData) end
 end
 
-local function renderToggle(elementData)
-    local frame = createBaseElementFrame(elementData)
-    
-    local switch = create("TextButton", {
-        Name = "ToggleControl",
-        Parent = frame,
-        Size = UDim2.new(0, 50, 0, ELEMENT_HEIGHT - 16),
-        Position = UDim2.new(1, 0, 0.5, 0),
-        AnchorPoint = Vector2.new(1, 0.5),
-        BackgroundColor3 = THEME_DEFAULTS.Subtle,
-        Text = "",
-    })
-    create("UICorner", { CornerRadius = UDim.new(1, 0), Parent = switch })
-    
-    local knob = create("Frame", {
-        Name = "Knob",
-        Parent = switch,
-        Size = UDim2.new(0, 20, 0, 20),
-        AnchorPoint = Vector2.new(0.5, 0.5),
-        BackgroundColor3 = Color3.fromRGB(200, 200, 200),
-        BorderSizePixel = 0,
-    })
-    create("UICorner", { CornerRadius = UDim.new(1, 0), Parent = knob })
+-- //////////////////////////////////////////////////////////////////////////////////
+-- // 3. ELEMENT MANAGER
+-- //////////////////////////////////////////////////////////////////////////////////
 
-    local function updateVisuals(value, withAnimation)
-        local goalPos = value and UDim2.new(1, -12, 0.5, 0) or UDim2.new(0, 12, 0.5, 0)
-        local switchColor = value and THEME_DEFAULTS.Accent or THEME_DEFAULTS.Subtle
+local editPanel, editPanelLayout
+local elementListLayout -- Layout for the master list of elements
+
+local function clearEditPanel()
+    for _, child in ipairs(editPanel:GetChildren()) do
+        if child.Name ~= "Header" and child.Name ~= "Divider" then child:Destroy() end
+    end
+    editPanel.Visible = false
+    activeEditElementID = nil
+end
+
+local function populateEditPanel(elementData)
+    clearEditPanel()
+
+    elementData = elementData or {}
+    local props = elementData.properties or {}
+
+    -- Step 1: Identity
+    local _, nameInput = createTextInput("Display Name", editPanel)
+    nameInput.Text = elementData.label or ""
+
+    local _, idInput = createTextInput("Unique ID (no spaces)", editPanel)
+    idInput.Text = elementData.uniqueID or ""
+    
+    -- Element Type Dropdown
+    local typeDropdown = create("DropDown", {
+        Name = "TypeDropdown", Parent = editPanel, List = elementTypes,
+        Size=UDim2.new(1,0,0,INPUT_HEIGHT), BackgroundColor3=THEME_DEFAULTS.Subtle,
+        Value = table.find(elementTypes, elementData.type or "Button")
+    })
+    
+    -- Target Tab Dropdown
+    local tabIDs = {}
+    for _,t in ipairs(Engine.Registry.Tabs) do table.insert(tabIDs, t.uniqueID) end
+    local tabDropdown = create("DropDown", {
+        Name = "TabDropdown", Parent = editPanel, List = tabIDs,
+        Size=UDim2.new(1,0,0,INPUT_HEIGHT), BackgroundColor3=THEME_DEFAULTS.Subtle,
+        Value = table.find(tabIDs, elementData.targetTabID or (tabIDs[1] or ""))
+    })
+
+    -- Step 2: Dynamic Properties Panel
+    local propsPanel = create("Frame", {Name="PropsPanel", Parent=editPanel, BackgroundTransparency=1, AutomaticSize=Enum.AutomaticSize.Y, Size=UDim2.new(1,0,0,0)})
+    create("UIListLayout", {Parent=propsPanel, Padding=UDim.new(0,5)})
+    
+    local dynamicInputs = {}
+    local function buildDynamicProps(elementType)
+        for _,child in ipairs(propsPanel:GetChildren()) do if child:IsA("Frame") then child:Destroy() end end
+        dynamicInputs = {}
         
-        if withAnimation then
-            tween(knob, { Position = goalPos })
-            tween(switch, { BackgroundColor3 = switchColor })
-        else
-            knob.Position = goalPos
-            switch.BackgroundColor3 = switchColor
+        if elementType == "Slider" then
+            local _, minIn = createTextInput("Min Value", propsPanel); dynamicInputs.minValue = minIn
+            local _, maxIn = createTextInput("Max Value", propsPanel); dynamicInputs.maxValue = maxIn
+            local _, incIn = createTextInput("Increment", propsPanel); dynamicInputs.increment = incIn
+            local _, defIn = createTextInput("Default Value", propsPanel); dynamicInputs.defaultValue = defIn
+            local _, sufIn = createTextInput("Suffix", propsPanel); dynamicInputs.suffix = sufIn
+        elseif elementType == "Dropdown" then
+            local f, i = createTextInput("Options (one per line)", propsPanel)
+            i.TextWrapped, i.MultiLine = true, true; f.Size=UDim2.new(1,0,0,80)
+            dynamicInputs.options = i
+        end
+
+        -- Populate with existing data if editing
+        for key, input in pairs(dynamicInputs) do
+            if props[key] then 
+                input.Text = type(props[key]) == "table" and table.concat(props[key], "\n") or tostring(props[key])
+            end
         end
     end
     
-    switch.MouseButton1Click:Connect(function()
-        local element = Engine.GetElement(elementData.uniqueID)
-        element.value = not element.value
-        updateVisuals(element.value, true)
-        Engine.ExecuteCode(elementData.uniqueID)
-    end)
+    typeDropdown.Changed:Connect(function(val) buildDynamicProps(elementTypes[val]) end)
+    buildDynamicProps(typeDropdown.Text)
     
-    updateVisuals(elementData.value, false)
+    -- Step 3: Lua Code Editor
+    local f, luaInput = createTextInput("Lua Code (paste here)", editPanel)
+    f.Size = UDim2.new(1,0,0,120); luaInput.MultiLine, luaInput.TextXAlignment = true, Enum.TextXAlignment.Left
+    luaInput.Text = elementData.luaCode or ""
     
-    renderedElements[elementData.uniqueID] = { instance = frame, updateFunc = updateVisuals }
-    return frame
-end
+    -- Controls
+    local saveBtn = createTextButton("Save Element", editPanel)
+    local cancelBtn = createTextButton("Cancel", editPanel)
+    cancelBtn.BackgroundColor3 = THEME_DEFAULTS.Destructive
 
-local function renderSlider(elementData)
-    local frame = createBaseElementFrame(elementData)
-    local props = elementData.properties
-    
-    local valueLabel = create("TextLabel", {
-        Name = "ValueLabel",
-        Parent = frame,
-        Size = UDim2.new(0, 60, 1, 0),
-        Position = UDim2.new(1, 0, 0, 0),
-        AnchorPoint = Vector2.new(1, 0),
-        BackgroundTransparency = 1,
-        Font = Enum.Font.SourceSans,
-        TextSize = 15,
-        TextColor3 = THEME_DEFAULTS.Text,
-    })
-    
-    local track = create("Frame", {
-        Name = "Track",
-        Parent = frame,
-        Size = UDim2.new(1, -80, 0, 6),
-        Position = UDim2.new(0, 0, 0.5, 0),
-        AnchorPoint = Vector2.new(0, 0.5),
-        BackgroundColor3 = THEME_DEFAULTS.Subtle,
-        BorderSizePixel = 0,
-    })
-    create("UICorner", { CornerRadius = UDim.new(1, 0), Parent = track })
-    
-    local progress = create("Frame", { Name = "Progress", Parent = track, BackgroundColor3 = THEME_DEFAULTS.Accent })
-    create("UICorner", { Parent = progress })
-    
-    local knob = create("Frame", { Name = "Knob", Parent = track, Size = UDim2.fromOffset(16,16), AnchorPoint = Vector2.new(0.5,0.5), BackgroundColor3 = Color3.fromRGB(255,255,255) })
-    create("UICorner", {CornerRadius = UDim.new(1,0), Parent = knob})
-
-    local isDragging = false
-    
-    local function updateVisuals(value, withAnimation)
-        local percentage = (value - props.minValue) / (props.maxValue - props.minValue)
-        local goal = {
-            Size = UDim2.new(percentage, 0, 1, 0),
-            Position = UDim2.new(percentage, 0, 0.5, 0) -- For the knob
+    cancelBtn.MouseButton1Click:Connect(clearEditPanel)
+    saveBtn.MouseButton1Click:Connect(function()
+        local data = {
+            label = nameInput.Text,
+            uniqueID = idInput.Text:gsub("%s+", "_"),
+            targetTabID = tabDropdown.Text,
+            type = typeDropdown.Text,
+            luaCode = luaInput.Text,
+            properties = {},
         }
         
-        if withAnimation then
-            tween(progress, {Size = goal.Size})
-            tween(knob, {Position = goal.Position})
-        else
-            progress.Size = goal.Size
-            knob.Position = goal.Position
+        for key, input in pairs(dynamicInputs) do
+            local val = input.Text
+            if key == "options" then
+                data.properties[key] = val:split("\n")
+            else
+                data.properties[key] = tonumber(val) or val -- Attempt to convert to number
+            end
         end
+
+        if data.type == "Toggle" then data.properties.defaultValue = false end
         
-        local roundedValue = math.floor(value / props.increment + 0.5) * props.increment
-        valueLabel.Text = tostring(roundedValue) .. (props.suffix or "")
-    end
-    
-    local function onInput(input)
-        local percentage = (input.Position.X - track.AbsolutePosition.X) / track.AbsoluteSize.X
-        percentage = math.clamp(percentage, 0, 1)
-        
-        local rawValue = props.minValue + (props.maxValue - props.minValue) * percentage
-        local steppedValue = math.clamp(math.floor(rawValue / props.increment + 0.5) * props.increment, props.minValue, props.maxValue)
-
-        local element = Engine.GetElement(elementData.uniqueID)
-        if element.value ~= steppedValue then
-            element.value = steppedValue
-            updateVisuals(steppedValue, false) -- No animation while dragging
-            Engine.ExecuteCode(elementData.uniqueID)
-        end
-    end
-    
-    track.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            isDragging = true
-            onInput(input)
-        end
+        if activeEditElementID then Engine.UpdateElement(activeEditElementID, data) else Engine.AddElement(data) end
+        clearEditPanel()
     end)
     
-    local inputChangedConn, inputEndedConn
-    inputChangedConn = UserInputService.InputChanged:Connect(function(input)
-        if isDragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-            onInput(input)
-        end
-    end)
-    inputEndedConn = UserInputService.InputEnded:Connect(function(input)
-        if isDragging and (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then
-            isDragging = false
-        end
-    end)
-    
-    frame.Destroying:Connect(function()
-        if inputChangedConn then inputChangedConn:Disconnect() end
-        if inputEndedConn then inputEndedConn:Disconnect() end
-    end)
-
-    updateVisuals(elementData.value, false)
-
-    frame.Label.Size = UDim2.new(0.5, -70, 1, 0)
-    track.Size = UDim2.new(0.5, -10, 0, 6)
-    track.Position = UDim2.new(0.5, -60, 0.5, 0)
-
-    renderedElements[elementData.uniqueID] = { instance = frame, updateFunc = updateVisuals }
-    return frame
+    editPanel.Visible = true
 end
 
+local function addElementToList(elementData)
+    local id = elementData.uniqueID
+    if elementListLayout.Parent:FindFirstChild(id) then elementListLayout.Parent[id]:Destroy() end
 
-local function renderDropdown(elementData)
-    local frame = createBaseElementFrame(elementData)
-    local props = elementData.properties
-    local isOpen = false
-
-    local dropdownButton = create("TextButton", {
-        Name = "DropdownButton",
-        Parent = frame,
-        Size = UDim2.new(0.5, 0, 1, -10),
-        Position = UDim2.new(1, 0, 0.5, 0),
-        AnchorPoint = Vector2.new(1, 0.5),
-        BackgroundColor3 = THEME_DEFAULTS.Subtle,
-        Text = tostring(elementData.value),
-        TextColor3 = THEME_DEFAULTS.Text,
-        Font = Enum.Font.SourceSans,
-        TextSize = 14,
-    })
-    create("UICorner", { Parent = dropdownButton })
-
-    local optionsList = create("ScrollingFrame", {
-        Name = "OptionsList",
-        Parent = frame,
-        Visible = false,
-        Size = UDim2.new(0.5, 0, 0, 120),
-        Position = UDim2.new(1, 0, 1, 5),
-        AnchorPoint = Vector2.new(1, 0),
-        BackgroundColor3 = THEME_DEFAULTS.Subtle,
-        BorderSizePixel = 0,
-        ZIndex = frame.ZIndex + 1,
-        CanvasSize = UDim2.new(),
-        AutomaticCanvasSize = Enum.AutomaticSize.Y,
-        ScrollBarThickness = 4,
-    })
-    create("UICorner", { Parent = optionsList })
-    create("UIListLayout", { Parent = optionsList, Padding = UDim.new(0,2) })
-
-    local function updateOptions()
-        optionsList:ClearAllChildren()
-        create("UIListLayout", { Parent = optionsList, Padding = UDim.new(0,2) }) -- Re-add layout
-        for _, optionText in ipairs(props.options or {}) do
-            local optionButton = create("TextButton", {
-                Name = optionText,
-                Parent = optionsList,
-                Size = UDim2.new(1, 0, 0, 25),
-                BackgroundColor3 = THEME_DEFAULTS.Subtle,
-                Text = optionText,
-                TextColor3 = THEME_DEFAULTS.Text,
-                Font = Enum.Font.SourceSans,
-                TextSize = 14,
-            })
-            optionButton.MouseEnter:Connect(function() optionButton.BackgroundColor3 = THEME_DEFAULTS.Element end)
-            optionButton.MouseLeave:Connect(function() optionButton.BackgroundColor3 = THEME_DEFAULTS.Subtle end)
-            
-            optionButton.MouseButton1Click:Connect(function()
-                local element = Engine.GetElement(elementData.uniqueID)
-                element.value = optionText
-                dropdownButton.Text = optionText
-                isOpen = false
-                tween(frame, { Size = UDim2.new(1, 0, 0, ELEMENT_HEIGHT) })
-                optionsList.Visible = false
-                Engine.ExecuteCode(elementData.uniqueID)
-            end)
-        end
-    end
+    local row = create("Frame", {Name=id, Parent=elementListLayout.Parent, Size=UDim2.new(1,0,0,30), BackgroundColor3=Color3.fromRGB(55,55,55)})
+    create("UICorner", {Parent=row})
+    local label = create("TextLabel", {Parent=row, Size=UDim2.new(1,-80,1,0), Position=UDim2.new(0,10,0,0), Text = elementData.label .. " (" .. elementData.uniqueID .. ")", TextColor3=THEME_DEFAULTS.Text, TextXAlignment=Enum.TextXAlignment.Left})
     
-    dropdownButton.MouseButton1Click:Connect(function()
-        isOpen = not isOpen
-        if isOpen then
-            updateOptions()
-            optionsList.Visible = true
-            local listHeight = optionsList.AbsoluteContentSize.Y + 4
-            tween(frame, { Size = UDim2.new(1, 0, 0, ELEMENT_HEIGHT + listHeight + 5) })
-        else
-            tween(frame, { Size = UDim2.new(1, 0, 0, ELEMENT_HEIGHT) })
-            task.wait(0.2)
-            optionsList.Visible = false
-        end
-    end)
-    
-    updateOptions()
+    local editBtn = createTextButton("Edit", row); editBtn.Size, editBtn.Position, editBtn.AnchorPoint = UDim2.new(0,35,0.8,0), UDim2.new(1,-45,0.5,0), Vector2.new(1,0.5)
+    local removeBtn = createTextButton("X", row); removeBtn.Size, removeBtn.Position, removeBtn.AnchorPoint, removeBtn.BackgroundColor3 = UDim2.new(0,35,0.8,0), UDim2.new(1,-5,0.5,0), Vector2.new(1,0.5), THEME_DEFAULTS.Destructive
 
-    renderedElements[elementData.uniqueID] = { instance = frame }
-    return frame
+    removeBtn.MouseButton1Click:Connect(function() Engine.RemoveElement(id) end)
+    editBtn.MouseButton1Click:Connect(function() activeEditElementID = id; populateEditPanel(Engine.GetElement(id)) end)
 end
 
+local function buildElementManager(parent)
+    local section, _ = createSection("Element Manager", parent)
+    
+    local listFrame = create("ScrollingFrame", {
+        Name = "ElementListScroll", Parent = section, Size = UDim2.new(1, 0, 0, 200),
+        BackgroundColor3 = THEME_DEFAULTS.Subtle, CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y,
+    })
+    elementListLayout = create("UIListLayout", { Parent = listFrame, Padding = UDim.new(0,5) })
+    create("UIPadding", {Parent=listFrame, PaddingLeft=UDim.new(0,5), PaddingRight=UDim.new(0,5)})
+
+    local createBtn = createTextButton("Create New Element", section)
+    createBtn.MouseButton1Click:Connect(function() activeEditElementID = nil; populateEditPanel() end)
+    
+    editPanel, editPanelLayout = createSection("Create/Edit Element", parent)
+    editPanel.Visible = false
+    
+    -- Connect signals
+    Engine.Signals.ElementAdded:Connect(addElementToList)
+    Engine.Signals.ElementUpdated:Connect(addElementToList) -- Re-adds to update label
+    Engine.Signals.ElementRemoved:Connect(function(id) if listFrame:FindFirstChild(id) then listFrame[id]:Destroy() end end)
+    
+    for _, elData in pairs(Engine.Registry.Elements) do addElementToList(elData) end
+end
 
 -- //////////////////////////////////////////////////////////////////////////////////
--- // 3. CORE LOGIC & INITIALIZATION
+-- // 4. CONFIGURATION MANAGER
 -- //////////////////////////////////////////////////////////////////////////////////
 
-local renderDispatch = {
-    Button = renderButton,
-    Toggle = renderToggle,
-    Slider = renderSlider,
-    Dropdown = renderDropdown
-}
+local function buildConfigManager(parent)
+    local section, _ = createSection("Configuration", parent)
 
-local function onElementAdded(elementData)
-    local tabID = elementData.targetTabID
-    local contentPage = contentPagesContainer:FindFirstChild(tabID)
-    if not contentPage then
-        warn("[Renderer] Could not find content page for tab ID:", tabID)
-        return
-    end
+    local exportBtn = createTextButton("Export Config to Clipboard", section)
+    exportBtn.MouseButton1Click:Connect(Engine.RequestSave)
 
-    local renderFunc = renderDispatch[elementData.type]
-    if renderFunc then
-        local elementInstance = renderFunc(elementData)
-        elementInstance.Parent = contentPage:FindFirstChild("LayoutFrame")
-        
-        if not renderedElements[elementData.uniqueID] then
-             renderedElements[elementData.uniqueID] = { instance = elementInstance }
+    local _, importInput = createTextInput("Paste Config Here", section)
+    local importBtn = createTextButton("Import from Text", section)
+    importBtn.MouseButton1Click:Connect(function()
+        if importInput.Text and importInput.Text ~= "" then
+            Engine.RequestLoad(importInput.Text)
         end
-    else
-        warn("[Renderer] No render function found for element type:", elementData.type)
-    end
+    end)
 end
 
-local function onElementRemoved(elementID)
-    if renderedElements[elementID] and renderedElements[elementID].instance then
-        renderedElements[elementID].instance:Destroy()
-        renderedElements[elementID] = nil
-    end
-end
+-- //////////////////////////////////////////////////////////////////////////////////
+-- // 5. INITIALIZATION
+-- //////////////////////////////////////////////////////////////////////////////////
 
-local function onElementValueChanged(elementID, newValue)
-    local rendered = renderedElements[elementID]
-    if rendered and rendered.updateFunc then
-        rendered.updateFunc(newValue, true) -- Update with animation
-    end
-end
-
-local function onElementUpdated(elementID, elementData)
-    onElementRemoved(elementID)
-    onElementAdded(elementData)
-end
-
-function ElementRenderer.Init(engineRef, containers)
+function SettingsPanel.Init(engineRef, containers)
     Engine = engineRef
-    contentPagesContainer = containers.contentPagesContainer
+    settingsContainer = containers.settingsPanelContainer
     
-    -- Connect to Engine signals
-    Engine.Signals.ElementAdded:Connect(onElementAdded)
-    Engine.Signals.ElementRemoved:Connect(onElementRemoved)
-    Engine.Signals.ElementUpdated:Connect(onElementUpdated)
-    Engine.Signals.ElementValueChanged:Connect(onElementValueChanged)
-end
-
--- This function will be called by the main script when a tab is created.
-function ElementRenderer.CreateContentPage(tabData)
-    local existing = contentPagesContainer:FindFirstChild(tabData.uniqueID)
-    if existing then return existing end
-
-    local page = create("Frame", {
-        Name = tabData.uniqueID,
-        Parent = contentPagesContainer,
-        Size = UDim2.new(1, 0, 1, 0),
-        BackgroundTransparency = 1,
-        Visible = false,
-    })
-
-    local scrollingFrame = create("ScrollingFrame", {
-        Name = "LayoutFrame",
-        Parent = page,
-        Size = UDim2.new(1, 0, 1, 0),
-        BackgroundTransparency = 1,
-        CanvasSize = UDim2.new(),
-        AutomaticCanvasSize = Enum.AutomaticSize.Y,
-        BorderSizePixel = 0,
-        ScrollBarImageColor3 = Color3.fromRGB(150, 150, 150),
-        ScrollBarThickness = 5,
-    })
-
-    create("UIListLayout", {
-        Parent = scrollingFrame,
-        SortOrder = Enum.SortOrder.LayoutOrder,
-        Padding = UDim.new(0, 5),
-        HorizontalAlignment = Enum.HorizontalAlignment.Center,
-    })
-    create("UIPadding", {
-        Parent = scrollingFrame,
-        PaddingLeft = UDim.new(0,10),
-        PaddingRight = UDim.new(0,10),
-    })
+    create("UIListLayout", { Parent = settingsContainer, Padding = UDim.new(0, SECTION_PADDING) })
     
-    return page
+    buildTabManager(settingsContainer)
+    buildConfigManager(settingsContainer)
+    buildElementManager(settingsContainer)
 end
 
-function ElementRenderer.DestroyContentPage(tabID)
-    local page = contentPagesContainer:FindFirstChild(tabID)
-    if page then
-        page:Destroy()
-    end
-end
-
-return ElementRenderer
+return SettingsPanel
