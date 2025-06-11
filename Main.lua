@@ -1,141 +1,596 @@
 --[[
-    Nexus-Lua GUI System | All-in-One Monolithic Script (Corrected)
-    Purpose: Combines all modules into a single file for maximum compatibility.
-    Fixes the "attempt to call a string value" error by properly implementing the dropdowns in the settings panel.
-    Created by Nexus-Lua for Master.
+    Nexus-Lua: Unified GUI System v1.0
+    All modules (Engine, WindowManager, Renderer, SettingsPanel, Main) are combined into this single file.
+    This script implements a clipboard-based saving system for mobile executor compatibility.
 ]]
 
--- This wrapper function keeps our variables from polluting the global environment.
-(function()
+-- Roblox Services & Global Utilities
+local HttpService = game:GetService("HttpService")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local CoreGui = game:GetService("CoreGui")
 
-    print("Nexus-Lua: Initializing All-in-One GUI System...")
+-- Helper function to create instances, used by multiple modules
+local function create(instanceType, properties)
+    local inst = Instance.new(instanceType)
+    for prop, value in pairs(properties or {}) do
+        inst[prop] = value
+    end
+    return inst
+end
 
-    -- //////////////////////////////////////////////////////////////////////////////////
-    -- // MODULE 1: ENGINE
-    -- //////////////////////////////////////////////////////////////////////////////////
-    local Engine = (function()
-        local EngineModule = {}
-        local Signal = {}
-        Signal.__index = Signal
-        function Signal.new() local self = setmetatable({}, Signal); self._connections = {}; return self end
-        function Signal:Connect(func) assert(typeof(func) == "function", "Signal:Connect requires a function."); local c = { _func = func, _signal = self, Connected = true }; table.insert(self._connections, c); function c:Disconnect() if not self.Connected then return end; for i, conn in ipairs(self._signal._connections) do if conn == self then table.remove(self._signal._connections, i); self.Connected = false; break end end end; return c end
-        function Signal:Fire(...) for _, c in ipairs(self._connections) do if c.Connected then task.spawn(c._func, ...) end end end
-        EngineModule.Registry = { Tabs = {}, Elements = {}, Theme = {} }
-        EngineModule.Signals = { TabAdded = Signal.new(), TabRemoved = Signal.new(), ElementAdded = Signal.new(), ElementUpdated = Signal.new(), ElementRemoved = Signal.new(), ElementValueChanged = Signal.new(), ThemeChanged = Signal.new(), NotificationRequested = Signal.new(), SaveRequested = Signal.new(), LoadRequested = Signal.new() }
-        local function deepClone(original) local copy = {}; for k, v in pairs(original) do if type(v) == "table" then v = deepClone(v) end; copy[k] = v end; return copy end
-        local API = {}
-        function API.GetValue(id) local e = EngineModule.Registry.Elements[id]; if not e then warn("[API] GetValue failed: No element with ID: " .. tostring(id)); return nil end; return e.value end
-        function API.SetValue(id, val) local e = EngineModule.Registry.Elements[id]; if not e then warn("[API] SetValue failed: No element with ID: " .. tostring(id)); return end; e.value = val; EngineModule.Signals.ElementValueChanged:Fire(id, val); EngineModule.ExecuteCode(id) end
-        function API.Trigger(id) local e = EngineModule.Registry.Elements[id]; if not e then warn("[API] Trigger failed: No element with ID: " .. tostring(id)); return end; EngineModule.ExecuteCode(id) end
-        function API.Notify(title, content) EngineModule.Signals.NotificationRequested:Fire(tostring(title), tostring(content)) end
-        function API.GetProperties(id) local e = EngineModule.Registry.Elements[id]; if not e then warn("[API] GetProperties failed: No element with ID: " .. tostring(id)); return nil end; return deepClone(e.properties) end
-        function API.SetProperties(id, props) local e = EngineModule.Registry.Elements[id]; if not e then warn("[API] SetProperties failed: No element with ID: " .. tostring(id)); return end; for k, v in pairs(props) do e.properties[k] = v end; EngineModule.Signals.ElementUpdated:Fire(id, deepClone(e)) end
-        function EngineModule.RequestSave() EngineModule.Signals.SaveRequested:Fire() end
-        function EngineModule.RequestLoad(data) EngineModule.Signals.LoadRequested:Fire(data) end
-        function EngineModule.GetElement(id) return EngineModule.Registry.Elements[id] end
-        function EngineModule.AddElement(data) local id = data.uniqueID; if not id or EngineModule.Registry.Elements[id] then warn("[Engine] AddElement failed: Invalid or duplicate ID: '" .. tostring(id) .. "'."); return end; data.value = data.properties.defaultValue; EngineModule.Registry.Elements[id] = data; EngineModule.Signals.ElementAdded:Fire(deepClone(data)) end
-        function EngineModule.RemoveElement(id) if not EngineModule.Registry.Elements[id] then return end; EngineModule.Registry.Elements[id] = nil; EngineModule.Signals.ElementRemoved:Fire(id) end
-        function EngineModule.UpdateElement(id, data) if not EngineModule.Registry.Elements[id] then warn("[Engine] UpdateElement failed: No element with ID: " .. tostring(id)); return end; data.value = data.value or EngineModule.Registry.Elements[id].value; EngineModule.Registry.Elements[id] = data; EngineModule.Signals.ElementUpdated:Fire(id, deepClone(data)) end
-        function EngineModule.AddTab(data) local id = data.uniqueID; for _, t in ipairs(EngineModule.Registry.Tabs) do if t.uniqueID == id then warn("[Engine] AddTab failed: A tab with ID '" .. tostring(id) .. "' already exists."); return end end; table.insert(EngineModule.Registry.Tabs, data); EngineModule.Signals.TabAdded:Fire(deepClone(data)) end
-        function EngineModule.RemoveTab(id) for i, t in ipairs(EngineModule.Registry.Tabs) do if t.uniqueID == id then table.remove(EngineModule.Registry.Tabs, i); EngineModule.Signals.TabRemoved:Fire(id); local toRemove = {}; for eID, eData in pairs(EngineModule.Registry.Elements) do if eData.targetTabID == id then table.insert(toRemove, eID) end end; for _, rID in ipairs(toRemove) do EngineModule.RemoveElement(rID) end; return end end end
-        function EngineModule.UpdateTheme(theme) EngineModule.Registry.Theme = theme; EngineModule.Signals.ThemeChanged:Fire(deepClone(theme)) end
-        function EngineModule.ExecuteCode(id) local e = EngineModule.Registry.Elements[id]; if not e or not e.luaCode or e.luaCode:match("^%s*$") then return end; local env = { API = API, self = { Value = e.value, Properties = deepClone(e.properties) }, print = print, warn = warn, task = task, game = game, Color3 = Color3, Vector3 = Vector3, CFrame = CFrame, Enum = Enum, pairs = pairs, ipairs = ipairs, tostring = tostring }; local func, err = loadstring(e.luaCode); if not func then API.Notify("Lua Error in '"..e.label.."'", "Syntax Error: " .. tostring(err)); return end; setfenv(func, env); local success, execErr = pcall(func); if not success then API.Notify("Lua Error in '"..e.label.."'", "Runtime Error: " .. tostring(execErr)) end end
-        return EngineModule
-    end)()
+-- Wait for the game to be ready before initializing the GUI
+if not game:IsLoaded() then
+    game.Loaded:Wait()
+end
 
-    -- //////////////////////////////////////////////////////////////////////////////////
-    -- // MODULE 2: WINDOW MANAGER
-    -- //////////////////////////////////////////////////////////////////////////////////
-    local WindowManager = (function()
-        local WindowManagerModule = {}
-        local TweenService = game:GetService("TweenService"); local UserInputService = game:GetService("UserInputService")
-        local ZINDEX_BASE, WIN_SIZE, HEADER_H, SIDEBAR_W, isSidebarVisible = 500, Vector2.new(550, 400), 35, 130, true
-        local gui, window, header, sidebar, contentArea, orb, isDragging, dragStart, originalPosition
-        local function create(inst, props) local i = Instance.new(inst); for p, v in pairs(props or {}) do i[p] = v end; return i end
-        local function tween(inst, goal, dur) dur = dur or 0.25; local ti = TweenInfo.new(dur, Enum.EasingStyle.Quart, Enum.EasingDirection.Out); local t = TweenService:Create(inst, ti, goal); t:Play(); return t end
-        function WindowManagerModule.ApplyTheme(theme) if not window then return end; tween(window, { BackgroundColor3 = theme.Background }); tween(header, { BackgroundColor3 = theme.Header }); tween(sidebar, { BackgroundColor3 = theme.Sidebar }) end
-        local function onDragBegan(input) if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then isDragging = true; dragStart = input.Position; originalPosition = window.Position; window.ZIndex = ZINDEX_BASE + 10 end end
-        local function onInputChanged(input) if isDragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then local delta = input.Position - dragStart; window.Position = UDim2.fromOffset(originalPosition.X.Offset + delta.X, originalPosition.Y.Offset + delta.Y) end end
-        local function onInputEnded(input) if isDragging and (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then isDragging = false; window.ZIndex = ZINDEX_BASE end end
-        function WindowManagerModule.Minimize() local pos = window.AbsolutePosition; orb.Position = UDim2.fromOffset(pos.X, pos.Y); tween(window, {Size = UDim2.fromOffset(0,0), Position = UDim2.fromOffset(pos.X, pos.Y), BackgroundTransparency = 1}); for _,c in ipairs(window:GetChildren()) do tween(c, {Transparency = 1}, 0.1) end; orb.Visible = true; tween(orb, {ImageTransparency = 0, BackgroundTransparency = 0.5}, 0.2); orb.Draggable = true end
-        function WindowManagerModule.Restore() local pos = orb.AbsolutePosition; local size = window.Size.X.Offset > 50 and window.Size or UDim2.fromOffset(WIN_SIZE.X, WIN_SIZE.Y); tween(window, {Size = size, Position = UDim2.fromOffset(pos.X, pos.Y), BackgroundTransparency = 0.1}); for _,c in ipairs(window:GetChildren()) do tween(c, {Transparency = 0}, 0.4) end; tween(orb, {ImageTransparency = 1, BackgroundTransparency = 1}, 0.2); task.wait(0.2); orb.Visible = false; orb.Draggable = false end
-        function WindowManagerModule.Destroy() if gui then gui:Destroy(); gui = nil end end
-        function WindowManagerModule.ToggleSidebar() isSidebarVisible = not isSidebarVisible; local sbGoal = isSidebarVisible and UDim2.new(0, SIDEBAR_W, 1, -HEADER_H) or UDim2.new(0, 0, 1, -HEADER_H); local cGoalPos = isSidebarVisible and UDim2.new(0, SIDEBAR_W, 0, HEADER_H) or UDim2.new(0, 0, 0, HEADER_H); local cGoalSize = isSidebarVisible and UDim2.new(1, -SIDEBAR_W, 1, -HEADER_H) or UDim2.new(1, 0, 1, -HEADER_H); tween(sidebar, { Size = sbGoal }); tween(contentArea, { Position = cGoalPos, Size = cGoalSize }) end
-        local function createHeader(parent) header = create("Frame", { Name = "Header", Parent = parent, BackgroundColor3 = Color3.fromRGB(35, 35, 35), BorderSizePixel = 0, Size = UDim2.new(1, 0, 0, HEADER_H), ZIndex = ZINDEX_BASE + 2 }); header.InputBegan:Connect(onDragBegan); local hBtn = create("ImageButton", { Name = "HamburgerButton", Parent = header, BackgroundTransparency=1, Size = UDim2.fromOffset(24, 24), Position = UDim2.new(0, 8, 0.5, 0), AnchorPoint=Vector2.new(0,0.5), Image = "rbxassetid://6034842194", ImageColor3=Color3.fromRGB(220,220,220)}); create("TextLabel", { Name = "Title", Parent = header, Size = UDim2.new(0, 200, 1, 0), Position = UDim2.new(0, 40, 0, 0), Text = "GUI System", TextColor3 = Color3.fromRGB(240, 240, 240), Font = Enum.Font.SourceSansSemibold, TextSize = 18, TextXAlignment = Enum.TextXAlignment.Left, ZIndex = ZINDEX_BASE + 3 }); local tray = create("Frame", { Name = "IconTray", Parent = header, BackgroundTransparency = 1, Size = UDim2.new(0, 110, 1, 0), Position = UDim2.new(1, -115, 0, 0), ZIndex = ZINDEX_BASE + 3 }); create("UIListLayout", { Parent = tray, FillDirection = Enum.FillDirection.Horizontal, SortOrder = Enum.SortOrder.LayoutOrder, VerticalAlignment = Enum.VerticalAlignment.Center, HorizontalAlignment = Enum.HorizontalAlignment.Right, Padding = UDim.new(0, 8) }); local sBtn = create("ImageButton", { Name = "SettingsButton", BackgroundTransparency=1, LayoutOrder = 1, Size = UDim2.fromOffset(24, 24), Image="rbxassetid://1319033394"}); local mBtn = create("ImageButton", { Name = "MinimizeButton", BackgroundTransparency=1, LayoutOrder = 2, Size = UDim2.fromOffset(24, 24), Image="rbxassetid://1319033282"}); local eBtn = create("ImageButton", { Name = "ExitButton", BackgroundTransparency=1, LayoutOrder = 3, Size = UDim2.fromOffset(24, 24), Image="rbxassetid://1319032962"}); for _, btn in ipairs({sBtn, mBtn, eBtn}) do btn.Parent = tray; btn.ImageColor3 = Color3.fromRGB(200,200,200) end; return { hamburgerBtn=hBtn, settingsBtn = sBtn, minimizeBtn = mBtn, exitBtn = eBtn } end
-        local function createSidebar(parent) sidebar = create("ScrollingFrame", {Name = "Sidebar", Parent = parent, BackgroundColor3 = Color3.fromRGB(45, 45, 45), BorderSizePixel = 0, Size = UDim2.new(0, SIDEBAR_W, 1, -HEADER_H), Position = UDim2.new(0, 0, 0, HEADER_H), ClipsDescendants = true, ZIndex = ZINDEX_BASE + 1, CanvasSize = UDim2.new(), ScrollBarImageColor3 = Color3.fromRGB(150, 150, 150), ScrollBarThickness = 5}); create("UIListLayout", {Name = "TabListLayout", Parent = sidebar, SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 5), HorizontalAlignment = Enum.HorizontalAlignment.Center}); create("UIPadding", {Parent = sidebar, PaddingTop = UDim.new(0, 5)}); return sidebar end
-        local function createContentArea(parent) contentArea = create("Frame", {Name = "ContentArea", Parent = parent, BackgroundTransparency = 1, BorderSizePixel = 0, Size = UDim2.new(1, -SIDEBAR_W, 1, -HEADER_H), Position = UDim2.new(0, SIDEBAR_W, 0, HEADER_H), ClipsDescendants = true, ZIndex = ZINDEX_BASE + 1}); local p = create("Frame", {Name = "ContentPagesContainer", Parent = contentArea, BackgroundTransparency = 1, Size = UDim2.new(1, 0, 1, 0)}); local s = create("ScrollingFrame", {Name = "SettingsPanelContainer", Parent = contentArea, BackgroundTransparency = 1, Size = UDim2.new(1, 0, 1, 0), Visible = false, CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y, ScrollBarImageColor3 = Color3.fromRGB(150, 150, 150), ScrollBarThickness = 5}); create("UIPadding", {Parent = s, PaddingLeft = UDim.new(0,15), PaddingRight = UDim.new(0,15), PaddingTop = UDim.new(0,10)}); return { pages = p, settings = s } end
-        local function createOrb(parent) orb = create("ImageButton", {Name = "Orb", Parent = parent, Image = "rbxassetid://6034842194", ImageColor3 = Color3.fromRGB(255, 255, 255), BackgroundColor3 = Color3.fromRGB(50,50,50), BackgroundTransparency = 1, Size = UDim2.fromOffset(50, 50), ZIndex = ZINDEX_BASE + 11, ImageTransparency = 1, Visible = false, Draggable = false}); create("UICorner", {CornerRadius = UDim.new(1,0), Parent = orb}); orb.MouseButton1Click:Connect(WindowManagerModule.Restore); orb.InputBegan:Connect(function(input) if orb.Draggable and (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then local sPos, sOrbPos = input.Position, orb.Position; local conn; conn = UserInputService.InputChanged:Connect(function(inp) if inp.UserInputType == Enum.UserInputType.MouseMovement or inp.UserInputType == Enum.UserInputType.Touch then local delta = inp.Position - sPos; orb.Position = UDim2.fromOffset(sOrbPos.X.Offset + delta.X, sOrbPos.Y.Offset + delta.Y) elseif inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch and inp.UserInputState == Enum.UserInputState.End then conn:Disconnect() end end) end end); return orb end
-        function WindowManagerModule.Init() gui = create("ScreenGui", { Name = "NexusLuaGUISystem", Parent = gethui and gethui() or game:GetService("CoreGui"), ZIndexBehavior = Enum.ZIndexBehavior.Global, ResetOnSpawn = false }); window = create("Frame", { Name = "Window", Parent = gui, BackgroundColor3 = Color3.fromRGB(55, 55, 55), BackgroundTransparency = 0.1, BorderSizePixel = 0, Active = true, Draggable = false, Size = UDim2.fromOffset(WIN_SIZE.X, WIN_SIZE.Y), Position = UDim2.new(0.5, -WIN_SIZE.X / 2, 0.5, -WIN_SIZE.Y / 2), ClipsDescendants = true, ZIndex = ZINDEX_BASE }); create("UICorner", { CornerRadius = UDim.new(0, 6), Parent = window }); local hCtrl = createHeader(window); local sCont = createSidebar(window); local cConts = createContentArea(window); createOrb(gui); UserInputService.InputChanged:Connect(onInputChanged); UserInputService.InputEnded:Connect(onInputEnded); return { sidebarContainer = sCont, contentPagesContainer = cConts.pages, settingsPanelContainer = cConts.settings, hamburgerButton = hCtrl.hamburgerBtn, settingsButton = hCtrl.settingsBtn, minimizeButton = hCtrl.minimizeBtn, exitButton = hCtrl.exitBtn, themeApplicator = WindowManagerModule.ApplyTheme } end
-        return WindowManagerModule
-    end)()
+----------------------------------------------------------------------------------
+-- MODULE DEFINITION START
+-- All previously separate files are now defined as local tables here.
+----------------------------------------------------------------------------------
+
+-- ////////////////////////////////////////////////////////////////////////////////
+-- // Phase 1: The Core Engine
+-- // The brain of the GUI system. Manages state, API, and code execution.
+-- ////////////////////////////////////////////////////////////////////////////////
+
+local Engine = {}
+do
+    -- Internal Signal System
+    local Signal = {}
+    Signal.__index = Signal
+    function Signal.new()
+        return setmetatable({ _connections = {} }, Signal)
+    end
+    function Signal:Connect(func)
+        local connection = { _func = func, _signal = self, Connected = true }
+        table.insert(self._connections, connection)
+        function connection:Disconnect()
+            if not self.Connected then return end
+            for i, conn in ipairs(self._signal._connections) do
+                if conn == self then
+                    table.remove(self._signal._connections, i)
+                    self.Connected = false
+                    break
+                end
+            end
+        end
+        return connection
+    end
+    function Signal:Fire(...)
+        for _, connection in ipairs(self._connections) do
+            if connection.Connected then
+                task.spawn(connection._func, ...)
+            end
+        end
+    end
+
+    -- State and Registry
+    Engine.Registry = { Tabs = {}, Elements = {} }
+    Engine.Signals = {
+        TabAdded = Signal.new(),
+        TabRemoved = Signal.new(),
+        ElementAdded = Signal.new(),
+        ElementUpdated = Signal.new(),
+        ElementRemoved = Signal.new(),
+        ElementValueChanged = Signal.new(),
+        NotificationRequested = Signal.new(),
+        SaveToClipboard = Signal.new()
+    }
+
+    -- API for User-Written Lua
+    local API = {}
+    function API.GetValue(id)
+        local el = Engine.Registry.Elements[id]
+        return el and el.value or nil
+    end
+    function API.SetValue(id, val)
+        local el = Engine.Registry.Elements[id]
+        if not el then return end
+        el.value = val
+        Engine.Signals.ElementValueChanged:Fire(id, val)
+        Engine.ExecuteCode(id)
+    end
+    function API.Trigger(id)
+        if not Engine.Registry.Elements[id] then return end
+        Engine.ExecuteCode(id)
+    end
+    function API.Notify(title, content)
+        Engine.Signals.NotificationRequested:Fire(tostring(title), tostring(content))
+    end
+    function API.GetProperties(id)
+        local el = Engine.Registry.Elements[id]
+        return el and table.clone(el.properties) or nil
+    end
+
+    -- Registry Management
+    function Engine.GetElement(id) return Engine.Registry.Elements[id] end
+    function Engine.AddElement(data)
+        if Engine.Registry.Elements[data.uniqueID] then return end
+        data.value = data.properties.defaultValue
+        Engine.Registry.Elements[data.uniqueID] = data
+        Engine.Signals.ElementAdded:Fire(data)
+    end
+    function Engine.RemoveElement(id)
+        if not Engine.Registry.Elements[id] then return end
+        Engine.Registry.Elements[id] = nil
+        Engine.Signals.ElementRemoved:Fire(id)
+    end
+    function Engine.UpdateElement(id, newData)
+        if not Engine.Registry.Elements[id] then return end
+        Engine.Registry.Elements[id] = newData
+        Engine.Signals.ElementUpdated:Fire(id, newData)
+    end
+    function Engine.AddTab(data)
+        table.insert(Engine.Registry.Tabs, data)
+        Engine.Signals.TabAdded:Fire(data)
+    end
+    function Engine.RemoveTab(id)
+        for i, tab in ipairs(Engine.Registry.Tabs) do
+            if tab.uniqueID == id then
+                table.remove(Engine.Registry.Tabs, i)
+                Engine.Signals.TabRemoved:Fire(id)
+                for elID, elData in pairs(Engine.Registry.Elements) do
+                    if elData.targetTabID == id then Engine.RemoveElement(elID) end
+                end
+                return
+            end
+        end
+    end
+
+    -- Sandboxed Code Execution
+    function Engine.ExecuteCode(id)
+        local element = Engine.Registry.Elements[id]
+        if not (element and element.luaCode and element.luaCode:match("%S")) then return end
+        local env = {
+            API = API,
+            self = { Value = element.value, Properties = table.clone(element.properties) },
+            print = print, warn = warn, task = task, game = game,
+        }
+        local func, err = loadstring(element.luaCode)
+        if not func then
+            API.Notify("Lua Error: "..element.label, "Syntax: " .. tostring(err))
+            return
+        end
+        setfenv(func, env)
+        local success, execErr = pcall(func)
+        if not success then
+            API.Notify("Lua Error: "..element.label, "Runtime: " .. tostring(execErr))
+        end
+    end
+
+    -- Load from string (for clipboard)
+    function Engine.LoadConfigurationFromString(jsonString)
+        local success, decodedData = pcall(function() return HttpService:JSONDecode(jsonString) end)
+        if success and decodedData and decodedData.Registry then
+            local tabsCopy = table.clone(Engine.Registry.Tabs)
+            for _, tab in ipairs(tabsCopy) do
+                Engine.RemoveTab(tab.uniqueID)
+            end
+
+            for _, tabData in ipairs(decodedData.Registry.Tabs) do Engine.AddTab(tabData) end
+            for _, elementData in pairs(decodedData.Registry.Elements) do Engine.AddElement(elementData) end
+            API.Notify("System", "Configuration Imported!")
+        else
+            API.Notify("Error", "Failed to import. Invalid format.")
+        end
+    end
+end
+
+-- ////////////////////////////////////////////////////////////////////////////////
+-- // Phase 2: The Window & Layout Manager
+-- // Creates all primary visual containers and handles window behavior.
+-- ////////////////////////////////////////////////////////////////////////////////
+local WindowManager = {}
+do
+    local ZINDEX_BASE, WINDOW_MIN_SIZE = 500, Vector2.new(520, 350)
+    local SIDEBAR_WIDTH, HEADER_HEIGHT = 150, 40
+
+    local gui, window, header, sidebar, contentArea, resizeHandle
+    local isSidebarVisible = true
+    local isDragging, isResizing = false, false
+    local dragStart, originalPosition, resizeStart, originalSize
+
+    local function tween(instance, goal, duration)
+        local t = TweenService:Create(instance, TweenInfo.new(duration or 0.25, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), goal)
+        t:Play()
+        return t
+    end
+
+    local function onInputBegan(obj, input)
+        if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then return end
+        if obj == header then
+            isDragging, dragStart, originalPosition = true, input.Position, window.Position
+        elseif obj == resizeHandle then
+            isResizing, resizeStart, originalSize = true, input.Position, window.AbsoluteSize
+        end
+        window.ZIndex = ZINDEX_BASE + 10
+    end
     
-    -- //////////////////////////////////////////////////////////////////////////////////
-    -- // MODULE 3: ELEMENT RENDERER
-    -- //////////////////////////////////////////////////////////////////////////////////
-    local ElementRenderer = (function()
-        local ElementRendererModule = {}
-        local TweenService = game:GetService("TweenService"); local UserInputService = game:GetService("UserInputService")
-        local Engine, contentPagesContainer, renderedElements = nil, nil, {}
-        local ELEMENT_H, ELEMENT_P, THEME = 40, 10, { Element = Color3.fromRGB(60, 60, 60), Text = Color3.fromRGB(240, 240, 240), Accent = Color3.fromRGB(85, 125, 255), Inactive = Color3.fromRGB(90, 90, 90), Subtle = Color3.fromRGB(40, 40, 40) }
-        local function create(inst, props) local i = Instance.new(inst); for p, v in pairs(props or {}) do i[p] = v end; return i end
-        local function tween(inst, goal, dur) dur = dur or 0.2; local ti = TweenInfo.new(dur, Enum.EasingStyle.Cubic, Enum.EasingDirection.Out); local t = TweenService:Create(inst, ti, goal); t:Play(); return t end
-        local function createBase(data) local f = create("Frame", { Name = data.uniqueID, BackgroundColor3 = THEME.Element, BorderSizePixel = 0, Size = UDim2.new(1, 0, 0, ELEMENT_H), LayoutOrder = os.time() }); create("UICorner", { CornerRadius = UDim.new(0, 4), Parent = f }); create("UIPadding", { Parent = f, PaddingLeft = UDim.new(0, ELEMENT_P), PaddingRight = UDim.new(0, ELEMENT_P) }); create("TextLabel", { Name = "Label", Parent = f, Size = UDim2.new(0.5, 0, 1, 0), BackgroundTransparency = 1, Text = data.label, TextColor3 = THEME.Text, Font = Enum.Font.SourceSans, TextSize = 16, TextXAlignment = Enum.TextXAlignment.Left }); return f end
-        local function renderButton(data) local f = createBase(data); local b = create("TextButton", { Name = "ButtonControl", Parent = f, Size = UDim2.new(0.4, 0, 1, -10), Position = UDim2.new(1, 0, 0.5, 0), AnchorPoint = Vector2.new(1, 0.5), BackgroundColor3 = THEME.Accent, Text = "Execute", TextColor3 = Color3.fromRGB(255, 255, 255), Font = Enum.Font.SourceSansSemibold, TextSize = 16 }); create("UICorner", { CornerRadius = UDim.new(0, 4), Parent = b }); b.MouseButton1Click:Connect(function() tween(b, {Size = UDim2.new(0.38, 0, 1, -12)}, 0.1).Completed:Wait(); tween(b, {Size = UDim2.new(0.4, 0, 1, -10)}, 0.1); Engine.ExecuteCode(data.uniqueID) end); return f end
-        local function renderToggle(data) local f = createBase(data); local s = create("TextButton", { Name = "ToggleControl", Parent = f, Size = UDim2.new(0, 50, 0, ELEMENT_H - 16), Position = UDim2.new(1, 0, 0.5, 0), AnchorPoint = Vector2.new(1, 0.5), BackgroundColor3 = THEME.Subtle, Text = "" }); create("UICorner", { CornerRadius = UDim.new(1, 0), Parent = s }); local k = create("Frame", { Name = "Knob", Parent = s, Size = UDim2.new(0, 20, 0, 20), AnchorPoint = Vector2.new(0.5, 0.5), BackgroundColor3 = Color3.fromRGB(200, 200, 200), BorderSizePixel = 0 }); create("UICorner", { CornerRadius = UDim.new(1, 0), Parent = k }); local function update(val, anim) local pos = val and UDim2.new(1, -12, 0.5, 0) or UDim2.new(0, 12, 0.5, 0); local color = val and THEME.Accent or THEME.Subtle; if anim then tween(k, { Position = pos }); tween(s, { BackgroundColor3 = color }) else k.Position = pos; s.BackgroundColor3 = color end end; s.MouseButton1Click:Connect(function() local e = Engine.GetElement(data.uniqueID); e.value = not e.value; update(e.value, true); Engine.ExecuteCode(data.uniqueID) end); update(data.value, false); renderedElements[data.uniqueID] = { instance = f, updateFunc = update }; return f end
-        local function renderSlider(data) local f = createBase(data); local p = data.properties; local vLabel = create("TextLabel", { Name = "ValueLabel", Parent = f, Size = UDim2.new(0, 60, 1, 0), Position = UDim2.new(1, 0, 0, 0), AnchorPoint = Vector2.new(1, 0), BackgroundTransparency = 1, Font = Enum.Font.SourceSans, TextSize = 15, TextColor3 = THEME.Text }); local track = create("Frame", { Name = "Track", Parent = f, Size = UDim2.new(1, -80, 0, 6), Position = UDim2.new(0, 0, 0.5, 0), AnchorPoint = Vector2.new(0, 0.5), BackgroundColor3 = THEME.Subtle, BorderSizePixel = 0 }); create("UICorner", { CornerRadius = UDim.new(1, 0), Parent = track }); local prog = create("Frame", { Name = "Progress", Parent = track, BackgroundColor3 = THEME.Accent, Size = UDim2.fromScale(0,1), BorderSizePixel=0 }); create("UICorner", { Parent = prog }); local knob = create("Frame", { Name = "Knob", Parent = track, Size = UDim2.fromOffset(16,16), AnchorPoint = Vector2.new(0.5,0.5), BackgroundColor3 = Color3.fromRGB(255,255,255), BorderSizePixel=0 }); create("UICorner", {CornerRadius = UDim.new(1,0), Parent = knob}); local dragging = false; local function update(val, anim) local pct = ((val or p.minValue) - p.minValue) / (p.maxValue - p.minValue); pct = math.clamp(pct, 0, 1); local goal = { Size = UDim2.new(pct, 0, 1, 0), Position = UDim2.new(pct, 0, 0.5, 0) }; if anim then tween(prog, {Size = goal.Size}); tween(knob, {Position = goal.Position}) else prog.Size = goal.Size; knob.Position = goal.Position end; local rVal = math.floor((val or p.minValue) / p.increment + 0.5) * p.increment; vLabel.Text = tostring(rVal) .. (p.suffix or "") end; local function onInput(input) local pct = (input.Position.X - track.AbsolutePosition.X) / track.AbsoluteSize.X; pct = math.clamp(pct, 0, 1); local raw = p.minValue + (p.maxValue - p.minValue) * pct; local stepped = math.clamp(math.floor(raw / p.increment + 0.5) * p.increment, p.minValue, p.maxValue); local e = Engine.GetElement(data.uniqueID); if e.value ~= stepped then e.value = stepped; update(stepped, false); Engine.ExecuteCode(data.uniqueID) end end; track.InputBegan:Connect(function(inp) if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then dragging = true; onInput(inp) end end); local iChanged = UserInputService.InputChanged:Connect(function(inp) if dragging and (inp.UserInputType == Enum.UserInputType.MouseMovement or inp.UserInputType == Enum.UserInputType.Touch) then onInput(inp) end end); local iEnded = UserInputService.InputEnded:Connect(function(inp) if dragging and (inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch) then dragging = false end end); f.Destroying:Connect(function() if iChanged then iChanged:Disconnect() end; if iEnded then iEnded:Disconnect() end end); update(data.value, false); f.Label.Size = UDim2.new(0.5, -70, 1, 0); track.Size = UDim2.new(0.5, -10, 0, 6); track.Position = UDim2.new(0.5, -60, 0.5, 0); renderedElements[data.uniqueID] = { instance = f, updateFunc = update }; return f end
-        local function renderDropdown(data) local f=createBase(data); local p=data.properties; local open=false; local btn=create("TextButton",{Name="DropdownButton",Parent=f,Size=UDim2.new(0.5,0,1,-10),Position=UDim2.new(1,0,0.5,0),AnchorPoint=Vector2.new(1,0.5),BackgroundColor3=THEME.Subtle,Text=tostring(data.value),TextColor3=THEME.Text,Font=Enum.Font.SourceSans,TextSize=14}); create("UICorner",{Parent=btn}); local list=create("ScrollingFrame",{Name="OptionsList",Parent=f,Visible=false,Size=UDim2.new(0.5,0,0,120),Position=UDim2.new(1,0,1,5),AnchorPoint=Vector2.new(1,0),BackgroundColor3=THEME.Subtle,BorderSizePixel=0,ZIndex=f.ZIndex+10,CanvasSize=UDim2.new(),AutomaticCanvasSize=Enum.AutomaticSize.Y,ScrollBarThickness=4}); create("UICorner",{Parent=list}); create("UIListLayout",{Parent=list,Padding=UDim.new(0,2),SortOrder=Enum.SortOrder.LayoutOrder}); local function updateOpts() for _,c in ipairs(list:GetChildren()) do if c:IsA("TextButton") then c:Destroy() end end; for _,oTxt in ipairs(p.options or{}) do local oBtn=create("TextButton",{Name=oTxt,Parent=list,Size=UDim2.new(1,0,0,25),BackgroundColor3=THEME.Subtle,Text="  "..oTxt,TextColor3=THEME.Text,Font=Enum.Font.SourceSans,TextSize=14,TextXAlignment=Enum.TextXAlignment.Left}); create("UICorner",{Parent=oBtn}); oBtn.MouseEnter:Connect(function() oBtn.BackgroundColor3=THEME.Element end); oBtn.MouseLeave:Connect(function() oBtn.BackgroundColor3=THEME.Subtle end); oBtn.MouseButton1Click:Connect(function() local e=Engine.GetElement(data.uniqueID); e.value=oTxt; btn.Text=oTxt; open=false; tween(f,{Size=UDim2.new(1,0,0,ELEMENT_H)}); list.Visible=false; Engine.ExecuteCode(data.uniqueID) end) end end; btn.MouseButton1Click:Connect(function() open=not open; if open then updateOpts(); list.Visible=true; local lH=math.min(list.AbsoluteContentSize.Y+4,120); tween(f,{Size=UDim2.new(1,0,0,ELEMENT_H+lH+5)}); list.Size=UDim2.new(0.5,0,0,lH) else tween(f,{Size=UDim2.new(1,0,0,ELEMENT_H)}); task.wait(0.2); list.Visible=false end end); updateOpts(); renderedElements[data.uniqueID]={instance=f}; return f end
-        local dispatch = { Button = renderButton, Toggle = renderToggle, Slider = renderSlider, Dropdown = renderDropdown }
-        local function onElementAdded(data) local page = contentPagesContainer and contentPagesContainer:FindFirstChild(data.targetTabID); if not page then warn("[Renderer] No page for tab ID:", data.targetTabID); return end; local renderFunc = dispatch[data.type]; if renderFunc then local inst = renderFunc(data); inst.Parent = page:FindFirstChild("LayoutFrame"); if not renderedElements[data.uniqueID] then renderedElements[data.uniqueID] = { instance = inst } end else warn("[Renderer] No render function for type:", data.type) end end
-        local function onElementRemoved(id) if renderedElements[id] and renderedElements[id].instance and renderedElements[id].instance.Parent then renderedElements[id].instance:Destroy(); renderedElements[id] = nil end end
-        local function onElementValueChanged(id, val) local r = renderedElements[id]; if r and r.updateFunc then r.updateFunc(val, true) end end
-        local function onElementUpdated(id, data) onElementRemoved(id); onElementAdded(data) end
-        function ElementRendererModule.Init(engineRef, containers) Engine = engineRef; contentPagesContainer = containers.contentPagesContainer; Engine.Signals.ElementAdded:Connect(onElementAdded); Engine.Signals.ElementRemoved:Connect(onElementRemoved); Engine.Signals.ElementUpdated:Connect(onElementUpdated); Engine.Signals.ElementValueChanged:Connect(onElementValueChanged) end
-        function ElementRendererModule.CreateContentPage(data) if not contentPagesContainer then return end; if contentPagesContainer:FindFirstChild(data.uniqueID) then return contentPagesContainer[data.uniqueID] end; local page = create("Frame", { Name = data.uniqueID, Parent = contentPagesContainer, Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, Visible = false }); local scroll = create("ScrollingFrame", { Name = "LayoutFrame", Parent = page, Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y, BorderSizePixel = 0, ScrollBarImageColor3 = Color3.fromRGB(150, 150, 150), ScrollBarThickness = 5 }); create("UIListLayout", { Parent = scroll, SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 5), HorizontalAlignment = Enum.HorizontalAlignment.Center }); create("UIPadding", { Parent = scroll, PaddingLeft = UDim.new(0,10), PaddingRight = UDim.new(0,10), PaddingTop = UDim.new(0,10) }); return page end
-        function ElementRendererModule.DestroyContentPage(id) if not contentPagesContainer then return end; local page = contentPagesContainer:FindFirstChild(id); if page then page:Destroy() end end
-        return ElementRendererModule
-    end)()
+    local function onInputChanged(input)
+        if input.UserInputType ~= Enum.UserInputType.MouseMovement and input.UserInputType ~= Enum.UserInputType.Touch then return end
+        if isDragging then
+            local delta = input.Position - dragStart
+            window.Position = UDim2.fromOffset(originalPosition.X.Offset + delta.X, originalPosition.Y.Offset + delta.Y)
+        elseif isResizing then
+            local delta = input.Position - resizeStart
+            local newSize = originalSize + delta
+            window.Size = UDim2.fromOffset(math.max(WINDOW_MIN_SIZE.X, newSize.X), math.max(WINDOW_MIN_SIZE.Y, newSize.Y))
+        end
+    end
 
-    -- //////////////////////////////////////////////////////////////////////////////////
-    -- // MODULE 4: SETTINGS PANEL
-    -- //////////////////////////////////////////////////////////////////////////////////
-    local SettingsPanel = (function()
-        local SettingsPanelModule = {}; local Engine, container, activeID; local types = {"Button", "Toggle", "Slider", "Dropdown"}; local THEME = {Text = Color3.fromRGB(240, 240, 240), Subtle = Color3.fromRGB(40, 40, 40), Accent = Color3.fromRGB(85, 125, 255), Destructive = Color3.fromRGB(180, 70, 70)}; local function create(i,p) local new=Instance.new(i); for k,v in pairs(p or {}) do new[k]=v end; return new end; local function tween(inst, goal, dur) dur = dur or 0.2; local ti = TweenInfo.new(dur, Enum.EasingStyle.Cubic, Enum.EasingDirection.Out); local t = game:GetService("TweenService"):Create(inst, ti, goal); t:Play(); return t end
-        local function createSection(name,parent) local f=create("Frame",{Name=name.."Section",Parent=parent,BackgroundTransparency=1,AutomaticSize=Enum.AutomaticSize.Y,Size=UDim2.new(1,0,0,0)}); local l=create("UIListLayout",{Parent=f,SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,8)}); create("TextLabel",{Name="Header",Parent=f,Size=UDim2.new(1,0,0,25),Text=name,Font=Enum.Font.SourceSansBold,TextSize=20,TextColor3=THEME.Text,TextXAlignment=Enum.TextXAlignment.Left}); create("Frame",{Name="Divider",Parent=f,Size=UDim2.new(1,0,0,1),BackgroundColor3=THEME.Subtle,BorderSizePixel=0}); return f,l end; local function createBtn(txt,p) local b=create("TextButton",{Name=txt,Parent=p,Size=UDim2.new(0,150,0,35),BackgroundColor3=THEME.Accent,Text=txt,TextColor3=Color3.fromRGB(255,255,255),Font=Enum.Font.SourceSansSemibold,TextSize=16}); create("UICorner",{CornerRadius=UDim.new(0,4),Parent=b}); return b end; local function createInput(ph,p) local f=create("Frame",{Name=ph.."InputFrame",Parent=p,Size=UDim2.new(1,0,0,30),BackgroundColor3=THEME.Subtle,BorderSizePixel=0}); create("UICorner",{CornerRadius=UDim.new(0,4),Parent=f}); local tb=create("TextBox",{Name="Input",Parent=f,Size=UDim2.new(1,-20,1,0),Position=UDim2.new(0.5,0,0.5,0),AnchorPoint=Vector2.new(0.5,0.5),BackgroundTransparency=1,PlaceholderText=ph,PlaceholderColor3=Color3.fromRGB(150,150,150),Text="",TextColor3=Color3.fromRGB(220,220,220),Font=Enum.Font.SourceSans,TextSize=14,ClearTextOnFocus=false}); return f,tb end
-        local function createDropdown(name, options, parent) local wrapper=create("Frame",{Name=name, Parent=parent, Size=UDim2.new(1,0,0,30), BackgroundTransparency=1}); local open=false; local pseudoObject={Changed=Instance.new("BindableEvent"), Text="", Value=1}; local btn=create("TextButton",{Parent=wrapper,Size=UDim2.new(1,0,1,0),BackgroundColor3=THEME.Subtle,Text="",TextColor3=THEME.Text}); create("UICorner",{Parent=btn}); local list=create("ScrollingFrame",{Parent=wrapper,Visible=false,Size=UDim2.new(1,0,0,100),Position=UDim2.new(0,0,1,2),BackgroundColor3=THEME.Subtle,ZIndex=wrapper.ZIndex+1}); create("UICorner",{Parent=list}); create("UIListLayout",{Parent=list,Padding=UDim.new(0,2)}); local function select(val) pseudoObject.Value=val; pseudoObject.Text=options[val]; btn.Text=options[val]; pseudoObject.Changed:Fire(val) end; local function updateOpts() for _,c in ipairs(list:GetChildren()) do if c:IsA("TextButton") then c:Destroy() end end; for i,o in ipairs(options) do local oBtn=create("TextButton",{Parent=list,Size=UDim2.new(1,0,0,25),BackgroundColor3=THEME.Subtle,Text=o,TextColor3=THEME.Text}); oBtn.MouseButton1Click:Connect(function() select(i); open=false; list.Visible=false; tween(wrapper,{Size=UDim2.new(1,0,0,30)}) end) end end; btn.MouseButton1Click:Connect(function() open=not open; if open then updateOpts(); list.Visible=true; tween(wrapper,{Size=UDim2.new(1,0,0,30+math.min(list.AbsoluteContentSize.Y+4,100))}) else tween(wrapper,{Size=UDim2.new(1,0,0,30)}); task.wait(0.2); list.Visible=false end end); function pseudoObject:Destroy() wrapper:Destroy() end; select(1); return pseudoObject end
-        local function buildTabManager(p) local s,_=createSection("Tab Manager",p); local _,nameIn=createInput("New Tab Name",s); local addBtn=createBtn("Add Tab",s); addBtn.MouseButton1Click:Connect(function() local n=nameIn.Text; if n and n:match("%S") then Engine.AddTab({uniqueID=n:lower():gsub("%s+","_"),label=n}); nameIn.Text="" end end); local function addRow(data) local r=create("Frame",{Name=data.uniqueID,Parent=s,Size=UDim2.new(1,0,0,30),BackgroundTransparency=1}); create("TextLabel",{Parent=r,Size=UDim2.new(0.7,0,1,0),Text=data.label,TextColor3=THEME.Text,TextXAlignment=Enum.TextXAlignment.Left}); local rem=createBtn("Remove",r); rem.Size,rem.Position,rem.AnchorPoint,rem.BackgroundColor3=UDim2.new(0.2,0,1,0),UDim2.new(1,0,0.5,0),Vector2.new(1,0.5),THEME.Destructive; rem.MouseButton1Click:Connect(function() Engine.RemoveTab(data.uniqueID) end) end; Engine.Signals.TabAdded:Connect(addRow); Engine.Signals.TabRemoved:Connect(function(id) if s:FindFirstChild(id) then s[id]:Destroy() end end); for _,d in ipairs(Engine.Registry.Tabs) do addRow(d) end end
-        local editPanel,editList; local function clearEdit() for _,c in ipairs(editPanel:GetChildren()) do if c.Name~="Header" and c.Name~="Divider" then c:Destroy() end end; editPanel.Visible=false; activeID=nil end; local function popEdit(data) clearEdit(); data=data or{}; local p=data.properties or{}; local _,nameIn=createInput("Display Name",editPanel); nameIn.Text=data.label or""; local _,idIn=createInput("Unique ID",editPanel); idIn.Text=data.uniqueID or""; local typeDrop=createDropdown("TypeDropdown",types,editPanel); typeDrop.Value = table.find(types,data.type or"Button") or 1; typeDrop.Changed:Fire(typeDrop.Value); local tabIDs={}; for _,t in ipairs(Engine.Registry.Tabs) do table.insert(tabIDs,t.uniqueID) end; local tabDrop=createDropdown("TabDropdown",tabIDs,editPanel); tabDrop.Value=table.find(tabIDs,data.targetTabID or(tabIDs[1]or"")) or 1; tabDrop.Changed:Fire(tabDrop.Value); local propsPanel=create("Frame",{Name="PropsPanel",Parent=editPanel,BackgroundTransparency=1,AutomaticSize=Enum.AutomaticSize.Y,Size=UDim2.new(1,0,0,0)}); create("UIListLayout",{Parent=propsPanel,Padding=UDim.new(0,5)}); local dynIn={}; local function buildDyn(type) for _,c in ipairs(propsPanel:GetChildren()) do if c:IsA("Frame") then c:Destroy() end end; dynIn={}; if type=="Slider" then local _,min=createInput("Min Value",propsPanel); dynIn.minValue=min; local _,max=createInput("Max Value",propsPanel); dynIn.maxValue=max; local _,inc=createInput("Increment",propsPanel); dynIn.increment=inc; local _,def=createInput("Default Value",propsPanel); dynIn.defaultValue=def; local _,suf=createInput("Suffix",propsPanel); dynIn.suffix=suf elseif type=="Dropdown" then local f,i=createInput("Options (one per line)",propsPanel); i.TextWrapped,i.MultiLine=true,true; f.Size=UDim2.new(1,0,0,80); dynIn.options=i end; for k,i in pairs(dynIn) do if p[k] then i.Text=type(p[k])=="table" and table.concat(p[k],"\n") or tostring(p[k]) end end end; typeDrop.Changed:Connect(function(v) buildDyn(types[v]) end); buildDyn(typeDrop.Text); local f,luaIn=createInput("Lua Code",editPanel); f.Size=UDim2.new(1,0,0,120); luaIn.MultiLine,luaIn.TextXAlignment=true,Enum.TextXAlignment.Left; luaIn.Text=data.luaCode or""; local save=createBtn("Save",editPanel); local cancel=createBtn("Cancel",editPanel); cancel.BackgroundColor3=THEME.Destructive; cancel.MouseButton1Click:Connect(clearEdit); save.MouseButton1Click:Connect(function() local newData={label=nameIn.Text,uniqueID=idIn.Text:gsub("%s+","_"),targetTabID=tabDrop.Text,type=typeDrop.Text,luaCode=luaIn.Text,properties={}}; for k,i in pairs(dynIn) do local v=i.Text; if k=="options" then newData.properties[k]=v:split("\n") else newData.properties[k]=tonumber(v)or v end end; if newData.type=="Toggle" then newData.properties.defaultValue=false end; if activeID then Engine.UpdateElement(activeID,newData) else Engine.AddElement(newData) end; clearEdit() end); editPanel.Visible=true end; local function addToList(data) local id=data.uniqueID; if editList.Parent:FindFirstChild(id) then editList.Parent[id]:Destroy() end; local r=create("Frame",{Name=id,Parent=editList.Parent,Size=UDim2.new(1,0,0,30),BackgroundColor3=Color3.fromRGB(55,55,55)}); create("UICorner",{Parent=r}); create("TextLabel",{Parent=r,Size=UDim2.new(1,-80,1,0),Position=UDim2.new(0,10,0,0),Text=data.label.." ("..data.uniqueID..")",TextColor3=THEME.Text,TextXAlignment=Enum.TextXAlignment.Left}); local edit=createBtn("Edit",r); edit.Size,edit.Position,edit.AnchorPoint=UDim2.new(0,35,0.8,0),UDim2.new(1,-45,0.5,0),Vector2.new(1,0.5); local rem=createBtn("X",r); rem.Size,rem.Position,rem.AnchorPoint,rem.BackgroundColor3=UDim2.new(0,35,0.8,0),UDim2.new(1,-5,0.5,0),Vector2.new(1,0.5),THEME.Destructive; rem.MouseButton1Click:Connect(function() Engine.RemoveElement(id) end); edit.MouseButton1Click:Connect(function() activeID=id; popEdit(Engine.GetElement(id)) end) end; local function buildElementManager(p) local s,_=createSection("Element Manager",p); local listFrame=create("ScrollingFrame",{Name="ElementListScroll",Parent=s,Size=UDim2.new(1,0,0,200),BackgroundColor3=THEME.Subtle,CanvasSize=UDim2.new(),AutomaticCanvasSize=Enum.AutomaticSize.Y}); editList=create("UIListLayout",{Parent=listFrame,Padding=UDim.new(0,5)}); create("UIPadding",{Parent=listFrame,PaddingLeft=UDim.new(0,5),PaddingRight=UDim.new(0,5)}); local createNew=createBtn("Create New Element",s); createNew.MouseButton1Click:Connect(function() activeID=nil; popEdit() end); editPanel,_=createSection("Create/Edit Element",p); editPanel.Visible=false; Engine.Signals.ElementAdded:Connect(addToList); Engine.Signals.ElementUpdated:Connect(addToList); Engine.Signals.ElementRemoved:Connect(function(id) if listFrame:FindFirstChild(id) then listFrame[id]:Destroy() end end); for _,d in pairs(Engine.Registry.Elements) do addToList(d) end end; local function buildConfigManager(p) local s,_=createSection("Configuration",p); local export=createBtn("Export to Clipboard",s); export.MouseButton1Click:Connect(Engine.RequestSave); local _,impIn=createInput("Paste Config Here",s); local imp=createBtn("Import",s); imp.MouseButton1Click:Connect(function() if impIn.Text and impIn.Text~="" then Engine.RequestLoad(impIn.Text) end end) end; function SettingsPanelModule.Init(engineRef,containers) Engine=engineRef; container=containers.settingsPanelContainer; create("UIListLayout",{Parent=container,Padding=UDim.new(0,15)}); buildTabManager(container); buildConfigManager(container); buildElementManager(container) end; return SettingsPanelModule
-    end)()
+    local function onInputEnded(input)
+        if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then return end
+        isDragging, isResizing, window.ZIndex = false, false, ZINDEX_BASE
+    end
 
-    -- //////////////////////////////////////////////////////////////////////////////////
-    -- // FINAL ORCHESTRATOR LOGIC
-    -- //////////////////////////////////////////////////////////////////////////////////
-    print("Nexus-Lua: Initializing modules...")
-    local containers = WindowManager.Init()
+    function WindowManager.ToggleSidebar()
+        isSidebarVisible = not isSidebarVisible
+        local sidebarPos = isSidebarVisible and UDim2.new(0, 0, 0, HEADER_HEIGHT) or UDim2.new(0, -SIDEBAR_WIDTH, 0, HEADER_HEIGHT)
+        local contentPos = isSidebarVisible and UDim2.new(0, SIDEBAR_WIDTH, 0, HEADER_HEIGHT) or UDim2.new(0, 0, 0, HEADER_HEIGHT)
+        local contentSize = isSidebarVisible and UDim2.new(1, -SIDEBAR_WIDTH, 1, -HEADER_HEIGHT) or UDim2.new(1, 0, 1, -HEADER_HEIGHT)
+        tween(sidebar, { Position = sidebarPos })
+        tween(contentArea, { Position = contentPos, Size = contentSize })
+    end
+
+    function WindowManager.Destroy()
+        if gui then gui:Destroy() gui = nil end
+    end
+    
+    function WindowManager.ShowNotification(title, content)
+        local notifFrame = create("Frame", {
+            Name = "Notification",
+            Parent = gui,
+            Size = UDim2.new(0, 250, 0, 60),
+            Position = UDim2.new(1, -270, 1, 0),
+            BackgroundColor3 = Color3.fromRGB(30,30,30),
+            BackgroundTransparency = 0.2,
+            BorderSizePixel = 0,
+            ZIndex = ZINDEX_BASE + 100,
+        })
+        create("UICorner", {Parent = notifFrame, CornerRadius = UDim.new(0, 5)})
+        create("UIPadding", {Parent = notifFrame, PaddingLeft = UDim.new(0,10), PaddingRight = UDim.new(0,10), PaddingTop = UDim.new(0,5), PaddingBottom = UDim.new(0,5)})
+        create("TextLabel", {Name = "Title", Parent = notifFrame, Size = UDim2.new(1,0,0,20), Text = title, Font = Enum.Font.SourceSansBold, TextColor3 = Color3.fromRGB(255,255,255), TextSize = 16, TextXAlignment = Enum.TextXAlignment.Left, BackgroundTransparency = 1})
+        create("TextLabel", {Name = "Content", Parent = notifFrame, Size = UDim2.new(1,0,1,-25), Position = UDim2.new(0,0,0,25), Text = content, Font = Enum.Font.SourceSans, TextColor3 = Color3.fromRGB(220,220,220), TextSize = 14, TextXAlignment = Enum.TextXAlignment.Left, TextWrapped = true, BackgroundTransparency = 1})
+
+        tween(notifFrame, {Position = UDim2.new(1, -270, 1, -80)}, 0.3)
+        task.delay(4, function()
+            if notifFrame and notifFrame.Parent then
+                tween(notifFrame, {Position = UDim2.new(1, -270, 1, 0)}, 0.3)
+                task.wait(0.3)
+                notifFrame:Destroy()
+            end
+        end)
+    end
+
+    function WindowManager.Init(engineRef)
+        Engine.Signals.NotificationRequested:Connect(WindowManager.ShowNotification)
+
+        gui = create("ScreenGui", { Name = "NexusGUISystem", Parent = CoreGui, ZIndexBehavior = Enum.ZIndexBehavior.Global, ResetOnSpawn = false })
+        window = create("Frame", { Name = "Window", Parent = gui, BackgroundColor3 = Color3.fromRGB(45, 45, 45), BorderSizePixel = 0, Active = true, Size = UDim2.fromOffset(600, 400), Position = UDim2.new(0.5, -300, 0.5, -200), ClipsDescendants = true, ZIndex = ZINDEX_BASE })
+        create("UICorner", { Parent = window, CornerRadius = UDim.new(0, 6) })
+
+        header = create("Frame", { Name = "Header", Parent = window, BackgroundColor3 = Color3.fromRGB(35, 35, 35), BorderSizePixel = 0, Size = UDim2.new(1, 0, 0, HEADER_HEIGHT), ZIndex = ZINDEX_BASE + 2 })
+        header.InputBegan:Connect(function(i) onInputBegan(header, i) end)
+        create("TextButton", { Name = "SidebarToggle", Parent = header, Size = UDim2.fromOffset(40, 40), Text = "≡", TextColor3 = Color3.fromRGB(220, 220, 220), TextSize = 30, BackgroundTransparency = 1, ZIndex = ZINDEX_BASE + 3 }).MouseButton1Click:Connect(WindowManager.ToggleSidebar)
+        create("TextLabel", { Name = "Title", Parent = header, Size = UDim2.new(1, -120, 1, 0), Position = UDim2.new(0, 40, 0, 0), Text = "Nexus-Lua GUI", TextColor3 = Color3.fromRGB(255, 255, 255), Font = Enum.Font.SourceSansSemibold, TextSize = 18, TextXAlignment = Enum.TextXAlignment.Left, BackgroundTransparency = 1, ZIndex = ZINDEX_BASE + 3 })
+        local exitBtn = create("TextButton", { Name = "Exit", Parent = header, Size = UDim2.fromOffset(40, 40), Position = UDim2.new(1, -40, 0, 0), Text = "X", TextColor3 = Color3.fromRGB(220, 220, 220), TextSize = 20, BackgroundTransparency = 1, ZIndex = ZINDEX_BASE + 3 })
+        local settingsBtn = create("TextButton", { Name = "Settings", Parent = header, Size = UDim2.fromOffset(40, 40), Position = UDim2.new(1, -80, 0, 0), Text = "⚙", TextColor3 = Color3.fromRGB(220, 220, 220), TextSize = 24, BackgroundTransparency = 1, ZIndex = ZINDEX_BASE + 3 })
+        exitBtn.MouseButton1Click:Connect(WindowManager.Destroy)
+
+        sidebar = create("ScrollingFrame", { Name = "Sidebar", Parent = window, BackgroundColor3 = Color3.fromRGB(55, 55, 55), BorderSizePixel = 0, Size = UDim2.new(0, SIDEBAR_WIDTH, 1, -HEADER_HEIGHT), Position = UDim2.new(0, 0, 0, HEADER_HEIGHT), CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y, ZIndex = ZINDEX_BASE + 1, ScrollBarImageColor3 = Color3.fromRGB(120,120,120), ScrollBarThickness=4 })
+        create("UIListLayout", { Name = "TabListLayout", Parent = sidebar, SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 5), HorizontalAlignment = Enum.HorizontalAlignment.Center })
+        create("UIPadding", {Parent = sidebar, PaddingTop = UDim.new(0,5)})
+
+        contentArea = create("Frame", { Name = "ContentArea", Parent = window, BackgroundColor3 = Color3.fromRGB(40,40,40), BorderSizePixel=0, Size = UDim2.new(1, -SIDEBAR_WIDTH, 1, -HEADER_HEIGHT), Position = UDim2.new(0, SIDEBAR_WIDTH, 0, HEADER_HEIGHT), ClipsDescendants = true, ZIndex = ZINDEX_BASE + 1 })
+        local contentFrame = create("Frame", { Name = "ContentFrame", Parent = contentArea, BackgroundTransparency = 1, Size = UDim2.new(1, 0, 1, 0) })
+        local settingsFrame = create("Frame", { Name = "SettingsFrame", Parent = contentArea, BackgroundTransparency = 1, Size = UDim2.new(1, 0, 1, 0), Visible = false })
+        
+        resizeHandle = create("Frame", { Name = "ResizeHandle", Parent = window, BackgroundTransparency = 1, Size = UDim2.fromOffset(20, 20), Position = UDim2.new(1, -20, 1, -20), ZIndex = ZINDEX_BASE + 3 })
+        resizeHandle.InputBegan:Connect(function(i) onInputBegan(resizeHandle, i) end)
+
+        UserInputService.InputChanged:Connect(onInputChanged)
+        UserInputService.InputEnded:Connect(onInputEnded)
+        
+        return { tabContainer = sidebar, contentContainer = contentFrame, settingsContainer = settingsFrame, settingsButton = settingsBtn }
+    end
+end
+
+-- ////////////////////////////////////////////////////////////////////////////////
+-- // Phase 3: The Element Renderer
+-- // Creates the visual representation of elements.
+-- ////////////////////////////////////////////////////////////////////////////////
+local ElementRenderer = {}
+do
+    local ELEMENT_HEIGHT, ELEMENT_PADDING = 40, 10
+    local contentContainer, renderedElements = nil, {}
+
+    local function createBaseElementFrame(data)
+        local frame = create("Frame", { Name = data.uniqueID, BackgroundColor3 = Color3.fromRGB(60, 60, 60), BorderSizePixel = 0, Size = UDim2.new(1, 0, 0, ELEMENT_HEIGHT) })
+        create("UICorner", { Parent = frame, CornerRadius = UDim.new(0, 4) })
+        create("TextLabel", { Name = "Label", Parent = frame, Size = UDim2.new(0.4, 0, 1, 0), Position = UDim2.new(0, ELEMENT_PADDING, 0, 0), Text = data.label, TextColor3 = Color3.fromRGB(240, 240, 240), Font = Enum.Font.SourceSans, TextSize = 16, TextXAlignment = Enum.TextXAlignment.Left, BackgroundTransparency=1 })
+        return frame
+    end
+
+    local function renderButton(data)
+        local frame = createBaseElementFrame(data)
+        local button = create("TextButton", { Name = "ButtonControl", Parent = frame, Size = UDim2.new(0.5, -ELEMENT_PADDING, 1, -10), Position = UDim2.new(0.5, 0, 0.5, 0), AnchorPoint = Vector2.new(0, 0.5), BackgroundColor3 = Color3.fromRGB(80, 80, 80), Text = data.label, TextColor3 = Color3.fromRGB(255, 255, 255), Font = Enum.Font.SourceSansSemibold, TextSize = 16 })
+        create("UICorner", { Parent = button, CornerRadius = UDim.new(0, 4) })
+        frame.Label.Visible = false
+        button.MouseButton1Click:Connect(function() Engine.ExecuteCode(data.uniqueID) end)
+        return frame
+    end
+    
+    local function renderToggle(data)
+        local frame = createBaseElementFrame(data)
+        local switch = create("TextButton", { Name = "ToggleControl", Parent = frame, Size = UDim2.new(0, 60, 0, ELEMENT_HEIGHT - 16), Position = UDim2.new(1, -ELEMENT_PADDING - 60, 0.5, 0), AnchorPoint = Vector2.new(1, 0.5), BackgroundColor3 = Color3.fromRGB(40, 40, 40), Text = "" })
+        create("UICorner", { Parent = switch, CornerRadius = UDim.new(1, 0) })
+        local knob = create("Frame", { Name = "Knob", Parent = switch, Size = UDim2.new(0, 24, 0, 24), AnchorPoint = Vector2.new(0.5, 0.5), BackgroundColor3 = Color3.fromRGB(200, 200, 200), BorderSizePixel = 0 })
+        create("UICorner", { Parent = knob, CornerRadius = UDim.new(1, 0) })
+        local function updateVisuals(value, animate)
+            local pos = value and UDim2.new(1, -15, 0.5, 0) or UDim2.new(0, 15, 0.5, 0)
+            local color = value and Color3.fromRGB(70, 180, 90) or Color3.fromRGB(150, 150, 150)
+            if animate then
+                local t = TweenService:Create(knob, TweenInfo.new(0.2), {Position = pos, BackgroundColor3 = color})
+                t:Play()
+            else
+                knob.Position, knob.BackgroundColor3 = pos, color
+            end
+        end
+        switch.MouseButton1Click:Connect(function()
+            local el = Engine.GetElement(data.uniqueID)
+            el.value = not el.value
+            updateVisuals(el.value, true)
+            Engine.ExecuteCode(data.uniqueID)
+        end)
+        updateVisuals(data.value, false)
+        renderedElements[data.uniqueID] = { instance = frame, updateFunc = updateVisuals }
+        return frame
+    end
+
+    local function renderSlider(data)
+        local frame = createBaseElementFrame(data)
+        local props = data.properties
+        local valueLabel = create("TextLabel", { Name = "ValueLabel", Parent = frame, Size = UDim2.new(0, 60, 1, 0), Position = UDim2.new(1, -ELEMENT_PADDING - 60, 0, 0), BackgroundTransparency = 1, Font = Enum.Font.SourceSans, TextSize = 15, TextColor3 = Color3.fromRGB(200, 200, 200) })
+        local track = create("Frame", { Name = "Track", Parent = frame, Size = UDim2.new(0.6, -ELEMENT_PADDING - 60, 0, 8), Position = UDim2.new(0.4, 0, 0.5, 0), AnchorPoint = Vector2.new(0, 0.5), BackgroundColor3 = Color3.fromRGB(40, 40, 40) })
+        create("UICorner", { Parent = track, CornerRadius = UDim.new(1, 0) })
+        local progress = create("Frame", { Name = "Progress", Parent = track, BackgroundColor3 = Color3.fromRGB(85, 125, 255) })
+        create("UICorner", { Parent = progress, CornerRadius = UDim.new(1, 0) })
+        local isDragging = false
+        local function updateVisuals(value)
+            local percentage = (value - props.minValue) / (props.maxValue - props.minValue)
+            progress.Size = UDim2.new(percentage, 0, 1, 0)
+            local roundedValue = math.floor((value / props.increment) + 0.5) * props.increment
+            valueLabel.Text = tostring(roundedValue) .. (props.suffix or "")
+        end
+        local function onInput(input)
+            local percentage = math.clamp((input.Position.X - track.AbsolutePosition.X) / track.AbsoluteSize.X, 0, 1)
+            local rawValue = props.minValue + (props.maxValue - props.minValue) * percentage
+            local steppedValue = math.clamp(math.floor(rawValue / props.increment + 0.5) * props.increment, props.minValue, props.maxValue)
+            if Engine.GetElement(data.uniqueID).value ~= steppedValue then
+                Engine.GetElement(data.uniqueID).value = steppedValue
+                updateVisuals(steppedValue)
+                Engine.ExecuteCode(data.uniqueID)
+            end
+        end
+        track.InputBegan:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then isDragging = true onInput(i) end end)
+        UserInputService.InputChanged:Connect(function(i) if isDragging and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then onInput(i) end end)
+        UserInputService.InputEnded:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then isDragging = false end end)
+        updateVisuals(data.value)
+        renderedElements[data.uniqueID] = { instance = frame, updateFunc = updateVisuals }
+        return frame
+    end
+    
+    local renderDispatch = { Button = renderButton, Toggle = renderToggle, Slider = renderSlider }
+    
+    function ElementRenderer.CreateContentPage(tabData)
+        if contentContainer:FindFirstChild(tabData.uniqueID) then return end
+        local page = create("Frame", { Name = tabData.uniqueID, Parent = contentContainer, Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, Visible = false })
+        local scrollingFrame = create("ScrollingFrame", { Name = "LayoutFrame", Parent = page, Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, CanvasSize = UDim2.new(), AutomaticCanvasSize=Enum.AutomaticSize.Y, BorderSizePixel = 0, ScrollBarImageColor3=Color3.fromRGB(150,150,150), ScrollBarThickness=6 })
+        create("UIListLayout", { Parent = scrollingFrame, SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, ELEMENT_PADDING), HorizontalAlignment = Enum.HorizontalAlignment.Center })
+        create("UIPadding", {Parent=scrollingFrame, PaddingLeft=UDim.new(0,10), PaddingRight=UDim.new(0,10), PaddingTop=UDim.new(0,10)})
+        return page
+    end
+    function ElementRenderer.DestroyContentPage(tabID)
+        local page = contentContainer and contentContainer:FindFirstChild(tabID)
+        if page then page:Destroy() end
+    end
+    
+    local function onElementAdded(data)
+        local page = contentContainer:FindFirstChild(data.targetTabID)
+        if not page then return end
+        local renderFunc = renderDispatch[data.type]
+        if renderFunc then
+            local instance = renderFunc(data)
+            instance.Parent = page.LayoutFrame
+            if not renderedElements[data.uniqueID] then renderedElements[data.uniqueID] = { instance = instance } end
+        end
+    end
+    local function onElementRemoved(id)
+        if renderedElements[id] then renderedElements[id].instance:Destroy() renderedElements[id] = nil end
+    end
+    local function onElementValueChanged(id, val)
+        local rendered = renderedElements[id]
+        if rendered and rendered.updateFunc then rendered.updateFunc(val, true) end
+    end
+
+    function ElementRenderer.Init(engineRef, containers)
+        Engine, contentContainer = engineRef, containers.contentContainer
+        for _, tabData in ipairs(Engine.Registry.Tabs) do ElementRenderer.CreateContentPage(tabData) end
+        Engine.Signals.ElementAdded:Connect(onElementAdded)
+        Engine.Signals.ElementRemoved:Connect(onElementRemoved)
+        Engine.Signals.ElementValueChanged:Connect(onElementValueChanged)
+    end
+end
+
+-- ////////////////////////////////////////////////////////////////////////////////
+-- // Phase 4: The Settings Panel
+-- // Builds the UI for creating/managing tabs and elements.
+-- ////////////////////////////////////////////////////////////////////////////////
+local SettingsPanel = {}
+do
+    local settingsContainer, activeEditElementID, editPanel
+    
+    local function createSection(name, order, parent)
+        local frame = create("Frame", { Name = name.."Section", Parent = parent, BackgroundTransparency = 1, Size = UDim2.new(1, -20, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, LayoutOrder = order })
+        local layout = create("UIListLayout", { Parent = frame, SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 5) })
+        create("TextLabel", { Name = "Header", Parent = frame, LayoutOrder = 1, Size = UDim2.new(1, 0, 0, 25), Text = name, Font = Enum.Font.SourceSansBold, TextSize = 20, TextColor3 = Color3.fromRGB(255, 255, 255), TextXAlignment = Enum.TextXAlignment.Left, BackgroundTransparency=1 })
+        return frame, layout
+    end
+
+    local function createTextButton(text, parent, order)
+        local btn = create("TextButton", { Name = text, Parent = parent, LayoutOrder = order, Size = UDim2.new(1, 0, 0, 35), BackgroundColor3 = Color3.fromRGB(80, 80, 80), Text = text, TextColor3 = Color3.fromRGB(255, 255, 255), Font = Enum.Font.SourceSansSemibold, TextSize = 16 })
+        create("UICorner", { Parent = btn, CornerRadius = UDim.new(0, 4) })
+        return btn
+    end
+
+    local function createTextInput(placeholder, parent, order, height)
+        local frame = create("Frame", { Name = placeholder .. "InputFrame", Parent = parent, LayoutOrder = order, Size = UDim2.new(1, 0, 0, height or 30), BackgroundColor3 = Color3.fromRGB(30, 30, 30) })
+        create("UICorner", { Parent = frame, CornerRadius = UDim.new(0, 4) })
+        local textBox = create("TextBox", { Name = "Input", Parent = frame, Size = UDim2.new(1, -10, 1, -10), Position = UDim2.new(0.5, 0, 0.5, 0), AnchorPoint = Vector2.new(0.5, 0.5), BackgroundTransparency = 1, PlaceholderText = placeholder, PlaceholderColor3 = Color3.fromRGB(150, 150, 150), Text = "", TextColor3 = Color3.fromRGB(220, 220, 220), Font = Enum.Font.SourceSans, TextSize = 14, ClearTextOnFocus = false })
+        return frame, textBox
+    end
+
+    local function clearEditPanel()
+        for i, child in ipairs(editPanel:GetChildren()) do if i > 1 then child:Destroy() end end
+        editPanel.Visible = false
+        activeEditElementID = nil
+    end
+
+    local function populateEditPanel(data)
+        clearEditPanel()
+        data = data or {}
+        local _, nameInput = createTextInput("Display Name", editPanel, 2)
+        local _, idInput = createTextInput("Unique ID (no spaces)", editPanel, 3)
+        local _, tabInput = createTextInput("Target Tab ID", editPanel, 4)
+        local _, typeInput = createTextInput("Type (Button, Toggle, Slider)", editPanel, 5)
+        local luaFrame, luaInput = createTextInput("Lua Code...", editPanel, 6, 120)
+        luaInput.MultiLine, luaInput.TextXAlignment, luaInput.TextYAlignment = true, Enum.TextXAlignment.Left, Enum.TextYAlignment.Top
+        nameInput.Text, idInput.Text, tabInput.Text, typeInput.Text, luaInput.Text = data.label or "", data.uniqueID or "", data.targetTabID or "", data.type or "", data.luaCode or ""
+        
+        local saveBtn = createTextButton("Save Element", editPanel, 7)
+        local cancelBtn = createTextButton("Cancel", editPanel, 8)
+        cancelBtn.BackgroundColor3 = Color3.fromRGB(120, 60, 60)
+        cancelBtn.MouseButton1Click:Connect(clearEditPanel)
+        saveBtn.MouseButton1Click:Connect(function()
+            local newData = {
+                label=nameInput.Text, uniqueID=idInput.Text, targetTabID=tabInput.Text, type=typeInput.Text, luaCode=luaInput.Text,
+                properties = {
+                    defaultValue = (typeInput.Text == "Toggle" and false) or (typeInput.Text == "Slider" and 50) or nil,
+                    minValue = 0, maxValue = 100, increment = 1, suffix = "",
+                }
+            }
+            if activeEditElementID then Engine.UpdateElement(activeEditElementID, newData) else Engine.AddElement(newData) end
+            clearEditPanel()
+        end)
+        editPanel.Visible = true
+    end
+
+    function SettingsPanel.Init(engineRef, containers)
+        Engine, settingsContainer = engineRef, containers.settingsContainer
+        local mainLayout = create("UIListLayout", { Parent = settingsContainer, SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 15), HorizontalAlignment = Enum.HorizontalAlignment.Center })
+        create("UIPadding", {Parent=settingsContainer, PaddingLeft=UDim.new(0,10), PaddingRight=UDim.new(0,10), PaddingTop=UDim.new(0,10)})
+
+        -- Configuration Manager
+        local configSection, _ = createSection("Configuration", 1, settingsContainer)
+        local _, importBox = createTextInput("Paste config here...", configSection, 2, 80)
+        importBox.MultiLine, importBox.TextXAlignment, importBox.TextYAlignment = true, Enum.TextXAlignment.Left, Enum.TextYAlignment.Top
+        local importBtn = createTextButton("Import from Clipboard", configSection, 3)
+        local exportBtn = createTextButton("Export to Clipboard", configSection, 4)
+        importBtn.MouseButton1Click:Connect(function()
+            if getclipboard then importBox.Text = getclipboard() end
+            if importBox.Text and #importBox.Text > 0 then Engine.LoadConfigurationFromString(importBox.Text) end
+        end)
+        exportBtn.MouseButton1Click:Connect(function() Engine.Signals.SaveToClipboard:Fire() end)
+
+        -- Tab Manager
+        local tabSection, _ = createSection("Tabs", 2, settingsContainer)
+        local _, tabNameInput = createTextInput("New Tab Name", tabSection, 2)
+        local addTabBtn = createTextButton("Add New Tab", tabSection, 3)
+        addTabBtn.MouseButton1Click:Connect(function()
+            if tabNameInput.Text:match("%S") then Engine.AddTab({ uniqueID = tabNameInput.Text:lower():gsub("%s+", "_"), label = tabNameInput.Text }) tabNameInput.Text = "" end
+        end)
+
+        -- Element Manager
+        local elementSection, _ = createSection("Elements", 3, settingsContainer)
+        editPanel, _ = createSection("Create/Edit Element", 4, settingsContainer)
+        editPanel.Visible = false
+        local createBtn = createTextButton("Create New Element", elementSection, 3)
+        createBtn.MouseButton1Click:Connect(function() activeEditElementID = nil; populateEditPanel() end)
+    end
+end
+
+----------------------------------------------------------------------------------
+-- MODULE DEFINITION END
+-- MAIN SCRIPT LOGIC (INITIALIZATION AND WIRING)
+----------------------------------------------------------------------------------
+do
+    print("Nexus-Lua: Initializing Unified GUI System...")
+
+    -- 1. Initialize Modules in Order
+    local containers = WindowManager.Init(Engine)
     ElementRenderer.Init(Engine, containers)
     SettingsPanel.Init(Engine, containers)
-    print("Nexus-Lua: Modules initialized.")
-    local isSettingsVisible = false; local currentTheme; local function setSettingsVisible(visible) isSettingsVisible = visible; containers.settingsPanelContainer.Visible = visible; containers.contentPagesContainer.Visible = not visible end
-    containers.hamburgerButton.MouseButton1Click:Connect(WindowManager.ToggleSidebar); containers.settingsButton.MouseButton1Click:Connect(function() setSettingsVisible(not isSettingsVisible) end); containers.minimizeButton.MouseButton1Click:Connect(WindowManager.Minimize); containers.exitButton.MouseButton1Click:Connect(WindowManager.Destroy)
-    local activeTabButton = nil; local function selectTab(tabButton, page) if activeTabButton and activeTabButton.Parent then activeTabButton.BackgroundColor3 = currentTheme.Sidebar or Color3.fromRGB(45, 45, 45) end; activeTabButton = tabButton; activeTabButton.BackgroundColor3 = currentTheme.Accent or Color3.fromRGB(85, 125, 255); for _, child in ipairs(containers.contentPagesContainer:GetChildren()) do if child:IsA("Frame") then child.Visible = false end end; if page then page.Visible = true end; setSettingsVisible(false) end
-    Engine.Signals.TabAdded:Connect(function(tabData) local page = ElementRenderer.CreateContentPage(tabData); local sidebar = containers.sidebarContainer; local tabButton = Instance.new("TextButton"); tabButton.Name = tabData.uniqueID; tabButton.Parent = sidebar; tabButton.Size = UDim2.new(1, -10, 0, 35); tabButton.BackgroundColor3 = currentTheme and currentTheme.Sidebar or Color3.fromRGB(45, 45, 45); tabButton.Text = tabData.label; tabButton.TextColor3 = Color3.fromRGB(230, 230, 230); tabButton.Font = Enum.Font.SourceSansSemibold; tabButton.TextSize = 16; local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(0, 4); corner.Parent = tabButton; tabButton.MouseButton1Click:Connect(function() selectTab(tabButton, page) end); if not activeTabButton or not activeTabButton.Parent then selectTab(tabButton, page) end end)
-    Engine.Signals.TabRemoved:Connect(function(tabID) ElementRenderer.DestroyContentPage(tabID); local button = containers.sidebarContainer:FindFirstChild(tabID); if button then if activeTabButton == button then activeTabButton = nil end; button:Destroy() end; if not activeTabButton and #containers.sidebarContainer:GetChildren() > 1 then local firstButton = containers.sidebarContainer:GetChildren()[2]; if firstButton then firstButton.MouseButton1Click:Fire() end end end)
-    Engine.Signals.ThemeChanged:Connect(function(theme) currentTheme = theme; containers.themeApplicator(theme) end)
-    Engine.Signals.NotificationRequested:Connect(function(title, content) print(string.format("[GUI NOTIFICATION | %s]: %s", title, content)) end)
-    local HttpService = game:GetService("HttpService"); local function saveConfiguration() if not setclipboard then Engine.Signals.NotificationRequested:Fire("Error", "Clipboard function not available."); return end; local dataToSave = { Registry = Engine.Registry }; local success, encodedData = pcall(function() return HttpService:JSONEncode(dataToSave) end); if success then setclipboard(encodedData); Engine.Signals.NotificationRequested:Fire("System", "Configuration copied!") else Engine.Signals.NotificationRequested:Fire("Error", "Failed to encode config.") end end
-    local function loadConfiguration(encodedData) local success, decodedData = pcall(function() return HttpService:JSONDecode(encodedData) end); if success and decodedData and decodedData.Registry then while #Engine.Registry.Tabs > 0 do Engine.RemoveTab(Engine.Registry.Tabs[1].uniqueID) end; Engine.UpdateTheme(decodedData.Registry.Theme or {}); for _, tabData in ipairs(decodedData.Registry.Tabs) do Engine.AddTab(tabData) end; for _, elementData in pairs(decodedData.Registry.Elements) do Engine.AddElement(elementData) end; Engine.Signals.NotificationRequested:Fire("System", "Configuration Loaded!") else Engine.Signals.NotificationRequested:Fire("Error", "Failed to load config. Data corrupt.") end end
-    Engine.Signals.SaveRequested:Connect(saveConfiguration); Engine.Signals.LoadRequested:Connect(loadConfiguration)
-    Engine.UpdateTheme({ Background = Color3.fromRGB(50, 50, 50), Header = Color3.fromRGB(40, 40, 40), Sidebar = Color3.fromRGB(45, 45, 45), Accent = Color3.fromRGB(85, 125, 255) })
+
+    -- 2. Connect System Together
+    local isSettingsVisible = false
+    local function toggleSettingsView()
+        isSettingsVisible = not isSettingsVisible
+        containers.settingsContainer.Visible = isSettingsVisible
+        containers.contentContainer.Visible = not isSettingsVisible
+    end
+    containers.settingsButton.MouseButton1Click:Connect(toggleSettingsView)
+
+    local activeTabButton = nil
+    Engine.Signals.TabAdded:Connect(function(tabData)
+        local page = ElementRenderer.CreateContentPage(tabData)
+        local sidebar = containers.tabContainer
+        local tabButton = create("TextButton", { Name = tabData.uniqueID, Parent = sidebar, Size = UDim2.new(1, -10, 0, 35), BackgroundColor3 = Color3.fromRGB(65, 65, 65), Text = tabData.label, TextColor3 = Color3.fromRGB(230, 230, 230), Font = Enum.Font.SourceSansSemibold, TextSize = 16 })
+        create("UICorner", { Parent = tabButton, CornerRadius = UDim.new(0, 4) })
+        tabButton.MouseButton1Click:Connect(function()
+            for _, child in ipairs(containers.contentContainer:GetChildren()) do child.Visible = false end
+            page.Visible = true
+            if isSettingsVisible then toggleSettingsView() end
+            if activeTabButton then activeTabButton.BackgroundColor3 = Color3.fromRGB(65, 65, 65) end
+            tabButton.BackgroundColor3 = Color3.fromRGB(85, 125, 255)
+            activeTabButton = tabButton
+        end)
+        -- Auto-select the first tab created
+        if not activeTabButton then tabButton:Invoke("MouseButton1Click") end
+    end)
+    Engine.Signals.TabRemoved:Connect(function(tabID)
+        ElementRenderer.DestroyContentPage(tabID)
+        local button = containers.tabContainer:FindFirstChild(tabID)
+        if button then
+            if activeTabButton == button then activeTabButton = nil end
+            button:Destroy()
+        end
+    end)
+
+    -- 3. Implement Save to Clipboard Functionality
+    Engine.Signals.SaveToClipboard:Connect(function()
+        local dataToSave = { Registry = Engine.Registry }
+        local success, encodedData = pcall(function() return HttpService:JSONEncode(dataToSave) end)
+        if success and setclipboard then
+            setclipboard(encodedData)
+            Engine.API.Notify("System", "Configuration copied to clipboard!")
+        else
+            Engine.API.Notify("Error", "Failed to export configuration.")
+        end
+    end)
+    
+    print("GUI System: Inter-module connections established.")
+
+    -- 4. Create Default Setup if no config is loaded/exists
     if #Engine.Registry.Tabs == 0 then
+        print("GUI System: No config loaded. Creating a default setup.")
         Engine.AddTab({ uniqueID = "main", label = "Main" })
         Engine.AddElement({
-            uniqueID = "welcome_button",
-            label = "Welcome",
-            type = "Button",
-            targetTabID = "main",
-            properties = {},
-            luaCode = [[API.Notify("Welcome", "This is your dynamically created GUI!")]]
+            uniqueID = "welcome_button", label = "Welcome!", type = "Button", targetTabID = "main", properties = {},
+            luaCode = [[ API.Notify("Welcome", "This is a button created in the default setup.") ]]
         })
     end
-    print("Nexus-Lua: GUI System is ready.")
-
-end)()
+    
+    print("Nexus-Lua: GUI System launch complete.")
+end
