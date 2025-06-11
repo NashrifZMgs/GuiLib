@@ -74,13 +74,20 @@ Engine.Signals.TabAdded:Connect(function(tabData)
     local tabButton = Instance.new("TextButton")
     tabButton.Name = tabData.uniqueID
     tabButton.Parent = sidebar
-    tabButton.Size = UDim2.new(1, 0, 0, 35)
-    tabButton.BackgroundColor3 = Color3.fromRGB(55, 55, 55)
-    tabButton.Text = "  " .. tabData.label
-    tabButton.TextColor3 = Color3.fromRGB(220, 220, 220)
-    tabButton.Font = Enum.Font.SourceSans
+    tabButton.LayoutOrder = #sidebar:GetChildren() -- Explicitly set layout order
+    tabButton.Size = UDim2.new(1, -10, 0, 35) -- Add padding
+    tabButton.Position = UDim2.new(0.5, 0, 0, 0)
+    tabButton.AnchorPoint = Vector2.new(0.5, 0)
+    tabButton.BackgroundColor3 = Color3.fromRGB(65, 65, 65) -- Slightly lighter for better contrast
+    tabButton.Text = tabData.label
+    tabButton.TextColor3 = Color3.fromRGB(230, 230, 230)
+    tabButton.Font = Enum.Font.SourceSansSemibold
     tabButton.TextSize = 16
-    tabButton.TextXAlignment = Enum.TextXAlignment.Left
+    tabButton.TextXAlignment = Enum.TextXAlignment.Center -- Center text
+    
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 4)
+    corner.Parent = tabButton
 
     tabButton.MouseButton1Click:Connect(function()
         -- Hide all other pages
@@ -94,6 +101,14 @@ Engine.Signals.TabAdded:Connect(function(tabData)
         if isSettingsVisible then
             toggleSettingsView()
         end
+        
+        -- Visual feedback for selection
+        for _, btn in ipairs(sidebar:GetChildren()) do
+            if btn:IsA("TextButton") then
+                btn.BackgroundColor3 = Color3.fromRGB(65, 65, 65)
+            end
+        end
+        tabButton.BackgroundColor3 = Color3.fromRGB(85, 125, 255) -- Highlight selected tab
     end)
 end)
 
