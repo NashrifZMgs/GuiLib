@@ -1,5 +1,5 @@
 --[[
-    Nexus-Lua GUI System | Phase 3: The Element Renderer
+    Nexus-Lua GUI System | Phase 3: The Element Renderer (Corrected)
     Purpose: Creates the visual representation of elements (Buttons, Toggles, etc.).
     Connects UI events to the Engine and updates visuals based on state changes.
 ]]
@@ -100,7 +100,7 @@ local function renderButton(elementData)
     create("UICorner", { CornerRadius = UDim.new(0, 4), Parent = button })
     
     button.MouseButton1Click:Connect(function()
-        tween(button, {Size = UDim2.new(0.38, 0, 1, -12)}, 0.1):Completed:Wait()
+        tween(button, {Size = UDim2.new(0.38, 0, 1, -12)}, 0.1).Completed:Wait()
         tween(button, {Size = UDim2.new(0.4, 0, 1, -10)}, 0.1)
         Engine.ExecuteCode(elementData.uniqueID)
     end)
@@ -185,16 +185,18 @@ local function renderSlider(elementData)
     })
     create("UICorner", { CornerRadius = UDim.new(1, 0), Parent = track })
     
-    local progress = create("Frame", { Name = "Progress", Parent = track, BackgroundColor3 = THEME_DEFAULTS.Accent })
+    local progress = create("Frame", { Name = "Progress", Parent = track, BackgroundColor3 = THEME_DEFAULTS.Accent, Size = UDim2.fromScale(0,1), BorderSizePixel=0 })
     create("UICorner", { Parent = progress })
     
-    local knob = create("Frame", { Name = "Knob", Parent = track, Size = UDim2.fromOffset(16,16), AnchorPoint = Vector2.new(0.5,0.5), BackgroundColor3 = Color3.fromRGB(255,255,255) })
+    local knob = create("Frame", { Name = "Knob", Parent = track, Size = UDim2.fromOffset(16,16), AnchorPoint = Vector2.new(0.5,0.5), BackgroundColor3 = Color3.fromRGB(255,255,255), BorderSizePixel=0 })
     create("UICorner", {CornerRadius = UDim.new(1,0), Parent = knob})
 
     local isDragging = false
     
     local function updateVisuals(value, withAnimation)
-        local percentage = (value - props.minValue) / (props.maxValue - props.minValue)
+        local percentage = ((value or props.minValue) - props.minValue) / (props.maxValue - props.minValue)
+        percentage = math.clamp(percentage, 0, 1)
+
         local goal = {
             Size = UDim2.new(percentage, 0, 1, 0),
             Position = UDim2.new(percentage, 0, 0.5, 0) -- For the knob
@@ -208,7 +210,7 @@ local function renderSlider(elementData)
             knob.Position = goal.Position
         end
         
-        local roundedValue = math.floor(value / props.increment + 0.5) * props.increment
+        local roundedValue = math.floor((value or props.minValue) / props.increment + 0.5) * props.increment
         valueLabel.Text = tostring(roundedValue) .. (props.suffix or "")
     end
     
@@ -234,13 +236,12 @@ local function renderSlider(elementData)
         end
     end)
     
-    local inputChangedConn, inputEndedConn
-    inputChangedConn = UserInputService.InputChanged:Connect(function(input)
+    local inputChangedConn = UserInputService.InputChanged:Connect(function(input)
         if isDragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
             onInput(input)
         end
     end)
-    inputEndedConn = UserInputService.InputEnded:Connect(function(input)
+    local inputEndedConn = UserInputService.InputEnded:Connect(function(input)
         if isDragging and (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then
             isDragging = false
         end
@@ -290,28 +291,30 @@ local function renderDropdown(elementData)
         AnchorPoint = Vector2.new(1, 0),
         BackgroundColor3 = THEME_DEFAULTS.Subtle,
         BorderSizePixel = 0,
-        ZIndex = frame.ZIndex + 1,
+        ZIndex = frame.ZIndex + 10,
         CanvasSize = UDim2.new(),
         AutomaticCanvasSize = Enum.AutomaticSize.Y,
         ScrollBarThickness = 4,
     })
     create("UICorner", { Parent = optionsList })
-    create("UIListLayout", { Parent = optionsList, Padding = UDim.new(0,2) })
+    create("UIListLayout", { Parent = optionsList, Padding = UDim.new(0,2), SortOrder = Enum.SortOrder.LayoutOrder })
 
     local function updateOptions()
-        optionsList:ClearAllChildren()
-        create("UIListLayout", { Parent = optionsList, Padding = UDim.new(0,2) }) -- Re-add layout
+        for _,child in ipairs(optionsList:GetChildren()) do if child:IsA("TextButton") then child:Destroy() end end
+        
         for _, optionText in ipairs(props.options or {}) do
             local optionButton = create("TextButton", {
                 Name = optionText,
                 Parent = optionsList,
                 Size = UDim2.new(1, 0, 0, 25),
                 BackgroundColor3 = THEME_DEFAULTS.Subtle,
-                Text = optionText,
+                Text = "  " .. optionText,
                 TextColor3 = THEME_DEFAULTS.Text,
                 Font = Enum.Font.SourceSans,
                 TextSize = 14,
+                TextXAlignment = Enum.TextXAlignment.Left,
             })
+            create("UICorner", { Parent = optionButton })
             optionButton.MouseEnter:Connect(function() optionButton.BackgroundColor3 = THEME_DEFAULTS.Element end)
             optionButton.MouseLeave:Connect(function() optionButton.BackgroundColor3 = THEME_DEFAULTS.Subtle end)
             
@@ -332,8 +335,9 @@ local function renderDropdown(elementData)
         if isOpen then
             updateOptions()
             optionsList.Visible = true
-            local listHeight = optionsList.AbsoluteContentSize.Y + 4
+            local listHeight = math.min(optionsList.AbsoluteContentSize.Y + 4, 120)
             tween(frame, { Size = UDim2.new(1, 0, 0, ELEMENT_HEIGHT + listHeight + 5) })
+            optionsList.Size = UDim2.new(0.5, 0, 0, listHeight)
         else
             tween(frame, { Size = UDim2.new(1, 0, 0, ELEMENT_HEIGHT) })
             task.wait(0.2)
@@ -361,7 +365,7 @@ local renderDispatch = {
 
 local function onElementAdded(elementData)
     local tabID = elementData.targetTabID
-    local contentPage = contentPagesContainer:FindFirstChild(tabID)
+    local contentPage = contentPagesContainer and contentPagesContainer:FindFirstChild(tabID)
     if not contentPage then
         warn("[Renderer] Could not find content page for tab ID:", tabID)
         return
@@ -381,7 +385,7 @@ local function onElementAdded(elementData)
 end
 
 local function onElementRemoved(elementID)
-    if renderedElements[elementID] and renderedElements[elementID].instance then
+    if renderedElements[elementID] and renderedElements[elementID].instance and renderedElements[elementID].instance.Parent then
         renderedElements[elementID].instance:Destroy()
         renderedElements[elementID] = nil
     end
@@ -410,8 +414,8 @@ function ElementRenderer.Init(engineRef, containers)
     Engine.Signals.ElementValueChanged:Connect(onElementValueChanged)
 end
 
--- This function will be called by the main script when a tab is created.
 function ElementRenderer.CreateContentPage(tabData)
+    if not contentPagesContainer then return end
     local existing = contentPagesContainer:FindFirstChild(tabData.uniqueID)
     if existing then return existing end
 
@@ -445,12 +449,14 @@ function ElementRenderer.CreateContentPage(tabData)
         Parent = scrollingFrame,
         PaddingLeft = UDim.new(0,10),
         PaddingRight = UDim.new(0,10),
+        PaddingTop = UDim.new(0,10),
     })
     
     return page
 end
 
 function ElementRenderer.DestroyContentPage(tabID)
+    if not contentPagesContainer then return end
     local page = contentPagesContainer:FindFirstChild(tabID)
     if page then
         page:Destroy()
