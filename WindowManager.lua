@@ -176,9 +176,9 @@ local function createHeader()
         Padding = UDim.new(0, 5)
     })
     
-    local settingsBtn = create("TextButton", { Name = "SettingsButton", Parent = iconTray, LayoutOrder = 1, Size = UDim2.new(0, 30, 0, 30), BackgroundColor3 = Color3.fromRGB(35, 35, 35), Text = "⚙", TextColor3 = Color3.fromRGB(220, 220, 220), TextSize = 24, Font = Enum.Font.SourceSansBold })
-    local minimizeBtn = create("TextButton", { Name = "MinimizeButton", Parent = iconTray, LayoutOrder = 2, Size = UDim2.new(0, 30, 0, 30), BackgroundColor3 = Color3.fromRGB(35, 35, 35), Text = "_", TextColor3 = Color3.fromRGB(220, 220, 220), TextSize = 24, Font = Enum.Font.SourceSansBold })
-    local exitBtn = create("TextButton", { Name = "ExitButton", Parent = iconTray, LayoutOrder = 3, Size = UDim2.new(0, 30, 0, 30), BackgroundColor3 = Color3.fromRGB(35, 35, 35), Text = "X", TextColor3 = Color3.fromRGB(220, 220, 220), TextSize = 24, Font = Enum.Font.SourceSansBold })
+    local settingsBtn = create("TextButton", { Name = "SettingsButton", Parent = iconTray, LayoutOrder = 1, Size = UDim2.new(0, 30, 0, 30), BackgroundColor3 = Color3.fromRGB(35, 35, 35), Text = "S", TextColor3 = Color3.fromRGB(220, 220, 220), TextSize = 20, Font = Enum.Font.SourceSansBold })
+    local minimizeBtn = create("TextButton", { Name = "MinimizeButton", Parent = iconTray, LayoutOrder = 2, Size = UDim2.new(0, 30, 0, 30), BackgroundColor3 = Color3.fromRGB(35, 35, 35), Text = "M", TextColor3 = Color3.fromRGB(220, 220, 220), TextSize = 20, Font = Enum.Font.SourceSansBold })
+    local exitBtn = create("TextButton", { Name = "ExitButton", Parent = iconTray, LayoutOrder = 3, Size = UDim2.new(0, 30, 0, 30), BackgroundColor3 = Color3.fromRGB(35, 35, 35), Text = "X", TextColor3 = Color3.fromRGB(220, 220, 220), TextSize = 20, Font = Enum.Font.SourceSansBold })
     
     minimizeBtn.MouseButton1Click:Connect(minimizeWindow)
     exitBtn.MouseButton1Click:Connect(function()
