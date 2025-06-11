@@ -1,7 +1,8 @@
 --[[
-    Nexus-Lua: Unified GUI System v1.0
+    Nexus-Lua: Unified GUI System v1.1
     All modules (Engine, WindowManager, Renderer, SettingsPanel, Main) are combined into this single file.
     This script implements a clipboard-based saving system for mobile executor compatibility.
+    Version 1.1 corrects a critical initialization error related to tab selection.
 ]]
 
 -- Roblox Services & Global Utilities
@@ -494,12 +495,12 @@ do
 
         -- Configuration Manager
         local configSection, _ = createSection("Configuration", 1, settingsContainer)
-        local _, importBox = createTextInput("Paste config here...", configSection, 2, 80)
+        local importFrame, importBox = createTextInput("Paste config string here to import", configSection, 2, 80)
         importBox.MultiLine, importBox.TextXAlignment, importBox.TextYAlignment = true, Enum.TextXAlignment.Left, Enum.TextYAlignment.Top
-        local importBtn = createTextButton("Import from Clipboard", configSection, 3)
+        local importBtn = createTextButton("Import from Pasted Text", configSection, 3)
         local exportBtn = createTextButton("Export to Clipboard", configSection, 4)
         importBtn.MouseButton1Click:Connect(function()
-            if getclipboard then importBox.Text = getclipboard() end
+            if getclipboard and #importBox.Text == 0 then importBox.Text = getclipboard() or "" end
             if importBox.Text and #importBox.Text > 0 then Engine.LoadConfigurationFromString(importBox.Text) end
         end)
         exportBtn.MouseButton1Click:Connect(function() Engine.Signals.SaveToClipboard:Fire() end)
@@ -526,7 +527,7 @@ end
 -- MAIN SCRIPT LOGIC (INITIALIZATION AND WIRING)
 ----------------------------------------------------------------------------------
 do
-    print("Nexus-Lua: Initializing Unified GUI System...")
+    print("Nexus-Lua: Initializing Unified GUI System v1.1...")
 
     -- 1. Initialize Modules in Order
     local containers = WindowManager.Init(Engine)
@@ -543,28 +544,57 @@ do
     containers.settingsButton.MouseButton1Click:Connect(toggleSettingsView)
 
     local activeTabButton = nil
+    
+    -- THIS IS THE CORRECTED LOGIC
+    local function selectTab(tabButton, page)
+        -- Hide all other pages
+        for _, child in ipairs(containers.contentContainer:GetChildren()) do
+            child.Visible = false
+        end
+        -- Show the correct page
+        page.Visible = true
+        
+        -- Also hide the settings view if it's open
+        if isSettingsVisible then
+            toggleSettingsView()
+        end
+        
+        -- Visual feedback for selection
+        for _, btn in ipairs(containers.tabContainer:GetChildren()) do
+            if btn:IsA("TextButton") then
+                btn.BackgroundColor3 = Color3.fromRGB(65, 65, 65)
+            end
+        end
+        tabButton.BackgroundColor3 = Color3.fromRGB(85, 125, 255) -- Highlight selected tab
+        activeTabButton = tabButton
+    end
+
     Engine.Signals.TabAdded:Connect(function(tabData)
         local page = ElementRenderer.CreateContentPage(tabData)
         local sidebar = containers.tabContainer
         local tabButton = create("TextButton", { Name = tabData.uniqueID, Parent = sidebar, Size = UDim2.new(1, -10, 0, 35), BackgroundColor3 = Color3.fromRGB(65, 65, 65), Text = tabData.label, TextColor3 = Color3.fromRGB(230, 230, 230), Font = Enum.Font.SourceSansSemibold, TextSize = 16 })
         create("UICorner", { Parent = tabButton, CornerRadius = UDim.new(0, 4) })
+        
         tabButton.MouseButton1Click:Connect(function()
-            for _, child in ipairs(containers.contentContainer:GetChildren()) do child.Visible = false end
-            page.Visible = true
-            if isSettingsVisible then toggleSettingsView() end
-            if activeTabButton then activeTabButton.BackgroundColor3 = Color3.fromRGB(65, 65, 65) end
-            tabButton.BackgroundColor3 = Color3.fromRGB(85, 125, 255)
-            activeTabButton = tabButton
+            selectTab(tabButton, page)
         end)
-        -- Auto-select the first tab created
-        if not activeTabButton then tabButton:Invoke("MouseButton1Click") end
+
+        -- Auto-select the first tab created by calling the new function
+        if not activeTabButton then
+            selectTab(tabButton, page)
+        end
     end)
+    
     Engine.Signals.TabRemoved:Connect(function(tabID)
         ElementRenderer.DestroyContentPage(tabID)
         local button = containers.tabContainer:FindFirstChild(tabID)
         if button then
-            if activeTabButton == button then activeTabButton = nil end
+            local selectNewTab = (activeTabButton == button)
+            activeTabButton = (activeTabButton == button) and nil or activeTabButton
             button:Destroy()
+            if selectNewTab and #containers.tabContainer:GetChildren() > 1 then
+                containers.tabContainer:GetChildren()[1].MouseButton1Click:Fire()
+            end
         end
     end)
 
