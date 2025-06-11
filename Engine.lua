@@ -1,10 +1,7 @@
 --[[
-    Phase 1: The Core Engine
-    This module is the non-visual brain of the entire GUI system.
-    - It manages the state and definitions of all tabs and elements.
-    - It provides the API for user-written Lua snippets.
-    - It executes user code in a controlled (sandboxed) environment.
-    - It uses signals to communicate with other modules (like the renderer and window manager).
+    Nexus-Lua GUI System | Phase 1: The Engine
+    Purpose: The non-visual core that manages all data, logic, and state.
+    This is the central nervous system of the GUI.
 ]]
 
 local Engine = {}
@@ -24,12 +21,7 @@ end
 
 function Signal:Connect(func)
     assert(typeof(func) == "function", "Signal:Connect requires a function.")
-    local connection = {
-        _func = func,
-        _signal = self,
-        Connected = true,
-    }
-
+    local connection = { _func = func, _signal = self, Connected = true }
     table.insert(self._connections, connection)
 
     function connection:Disconnect()
@@ -48,6 +40,7 @@ end
 function Signal:Fire(...)
     for _, connection in ipairs(self._connections) do
         if connection.Connected then
+            -- Using task.spawn ensures that one misbehaving listener doesn't stop others.
             task.spawn(connection._func, ...)
         end
     end
@@ -59,10 +52,12 @@ end
 -- //////////////////////////////////////////////////////////////////////////////////
 
 Engine.Registry = {
-    -- Stores definitions for tabs. e.g., { uniqueID = "main", label = "Main" }
+    -- Stores definitions for tabs. e.g., { uniqueID = "main", label = "Main", icon = "home" }
     Tabs = {},
     -- Stores complete definitions for elements, indexed by their uniqueID.
     Elements = {},
+    -- Stores the current theme settings.
+    Theme = {},
 }
 
 Engine.Signals = {
@@ -81,39 +76,53 @@ Engine.Signals = {
     -- Fired by API.SetValue to notify the renderer to update an element's visual state.
     -- Passes elementID, newValue.
     ElementValueChanged = Signal.new(),
+    
+    -- Fired when the GUI's theme is changed. Passes the new theme table.
+    ThemeChanged = Signal.new(),
 
     -- Fired by API.Notify to request the WindowManager show a notification.
     -- Passes title, content.
     NotificationRequested = Signal.new(),
     
-    -- Stubs for the main script to connect to.
+    -- Fired to request the main script handle saving/loading.
     SaveRequested = Signal.new(),
     LoadRequested = Signal.new(),
 }
 
 -- //////////////////////////////////////////////////////////////////////////////////
--- // 3. API FOR USER-WRITTEN LUA
+-- // 3. HELPER UTILITIES
+-- //////////////////////////////////////////////////////////////////////////////////
+
+local function deepClone(original)
+    local copy = {}
+    for k, v in pairs(original) do
+        if type(v) == "table" then
+            v = deepClone(v)
+        end
+        copy[k] = v
+    end
+    return copy
+end
+
+
+-- //////////////////////////////////////////////////////////////////////////////////
+-- // 4. API FOR USER-WRITTEN LUA
 -- // This table is injected into the environment of the user's code snippets.
 -- //////////////////////////////////////////////////////////////////////////////////
 
 local API = {}
 
 --- Returns the current value of another element.
--- @param elementUniqueID (string) The ID of the element to get the value from.
--- @return The element's value (boolean for toggle, number for slider, string/table for dropdown).
 function API.GetValue(elementUniqueID)
     local element = Engine.Registry.Elements[elementUniqueID]
     if not element then
         warn("[GUI Engine API] GetValue failed: No element found with ID: " .. tostring(elementUniqueID))
         return nil
     end
-    -- The 'value' property will be managed by the ElementRenderer in a later phase.
     return element.value
 end
 
---- Programmatically sets the value of another element.
--- @param elementUniqueID (string) The ID of the element to change.
--- @param newValue (any) The new value to set.
+--- Programmatically sets the value of another element. This will trigger that element's own Lua code.
 function API.SetValue(elementUniqueID, newValue)
     local element = Engine.Registry.Elements[elementUniqueID]
     if not element then
@@ -121,18 +130,12 @@ function API.SetValue(elementUniqueID, newValue)
         return
     end
     
-    -- Set the new value in the registry
     element.value = newValue
-    
-    -- Fire a signal so the renderer can update the visual part of the element.
     Engine.Signals.ElementValueChanged:Fire(elementUniqueID, newValue)
-    
-    -- Also, trigger the target element's own code to create action chains.
-    Engine.ExecuteCode(elementUniqueID)
+    Engine.ExecuteCode(elementUniqueID) -- Trigger action chains
 end
 
 --- Simulates a primary action on another element (e.g., a button click).
--- @param elementUniqueID (string) The ID of the element to trigger.
 function API.Trigger(elementUniqueID)
     local element = Engine.Registry.Elements[elementUniqueID]
     if not element then
@@ -143,29 +146,41 @@ function API.Trigger(elementUniqueID)
 end
 
 --- Shows an on-screen notification.
--- @param title (string) The title of the notification.
--- @param content (string) The main text of the notification.
 function API.Notify(title, content)
     Engine.Signals.NotificationRequested:Fire(tostring(title), tostring(content))
 end
 
 --- Gets the configuration properties of an element (e.g., min/max range of a slider).
--- @param elementUniqueID (string) The ID of the element to inspect.
--- @return A table of the element's properties.
 function API.GetProperties(elementUniqueID)
     local element = Engine.Registry.Elements[elementUniqueID]
     if not element then
         warn("[GUI Engine API] GetProperties failed: No element found with ID: " .. tostring(elementUniqueID))
         return nil
     end
-    -- Return a deep copy to prevent user code from modifying the original properties table.
-    return table.clone(element.properties)
+    -- Return a deep copy to prevent user code from accidentally modifying the registry.
+    return deepClone(element.properties)
+end
+
+--- Changes the configuration properties of an element.
+function API.SetProperties(elementUniqueID, newProperties)
+    local element = Engine.Registry.Elements[elementUniqueID]
+    if not element then
+        warn("[GUI Engine API] SetProperties failed: No element found with ID: " .. tostring(elementUniqueID))
+        return
+    end
+    
+    for key, value in pairs(newProperties) do
+        element.properties[key] = value
+    end
+
+    -- Fire the generic ElementUpdated signal so renderers can rebuild if needed (e.g., change dropdown options).
+    Engine.Signals.ElementUpdated:Fire(elementUniqueID, deepClone(element))
 end
 
 
 -- //////////////////////////////////////////////////////////////////////////////////
--- // 4. REGISTRY MANAGEMENT
--- // Functions to safely add, remove, and update tabs and elements.
+-- // 5. REGISTRY MANAGEMENT
+-- // Functions for other modules to safely add, remove, and update data.
 -- //////////////////////////////////////////////////////////////////////////////////
 
 function Engine.GetElement(elementID)
@@ -174,16 +189,16 @@ end
 
 function Engine.AddElement(elementData)
     local id = elementData.uniqueID
-    if Engine.Registry.Elements[id] then
-        warn("[GUI Engine] AddElement failed: An element with ID '" .. id .. "' already exists.")
+    if not id or Engine.Registry.Elements[id] then
+        warn("[GUI Engine] AddElement failed: Invalid or duplicate element ID: '" .. tostring(id) .. "'.")
         return
     end
     
-    -- Initialize the element's current value with its default if it exists
+    -- Initialize the element's current value with its default if it exists.
     elementData.value = elementData.properties.defaultValue
 
     Engine.Registry.Elements[id] = elementData
-    Engine.Signals.ElementAdded:Fire(elementData)
+    Engine.Signals.ElementAdded:Fire(deepClone(elementData))
 end
 
 function Engine.RemoveElement(elementID)
@@ -195,17 +210,28 @@ end
 
 function Engine.UpdateElement(elementID, newElementData)
     if not Engine.Registry.Elements[elementID] then
-        warn("[GUI Engine] UpdateElement failed: No element found with ID: " .. elementID)
+        warn("[GUI Engine] UpdateElement failed: No element found with ID: " .. tostring(elementID))
         return
     end
     
+    -- Preserve the current value if it's not being changed in the update
+    newElementData.value = newElementData.value or Engine.Registry.Elements[elementID].value
+    
     Engine.Registry.Elements[elementID] = newElementData
-    Engine.Signals.ElementUpdated:Fire(elementID, newElementData)
+    Engine.Signals.ElementUpdated:Fire(elementID, deepClone(newElementData))
 end
 
 function Engine.AddTab(tabData)
+    local id = tabData.uniqueID
+    for _, tab in ipairs(Engine.Registry.Tabs) do
+        if tab.uniqueID == id then
+             warn("[GUI Engine] AddTab failed: A tab with ID '" .. tostring(id) .. "' already exists.")
+             return
+        end
+    end
+
     table.insert(Engine.Registry.Tabs, tabData)
-    Engine.Signals.TabAdded:Fire(tabData)
+    Engine.Signals.TabAdded:Fire(deepClone(tabData))
 end
 
 function Engine.RemoveTab(tabID)
@@ -214,38 +240,46 @@ function Engine.RemoveTab(tabID)
             table.remove(Engine.Registry.Tabs, i)
             Engine.Signals.TabRemoved:Fire(tabID)
             
-            -- Also remove all elements associated with that tab
+            -- Also remove all elements associated with that tab.
+            local elementsToRemove = {}
             for elementID, elementData in pairs(Engine.Registry.Elements) do
                 if elementData.targetTabID == tabID then
-                    Engine.RemoveElement(elementID)
+                    table.insert(elementsToRemove, elementID)
                 end
             end
-            
+            for _, id in ipairs(elementsToRemove) do
+                Engine.RemoveElement(id)
+            end
             return
         end
     end
 end
 
+function Engine.UpdateTheme(themeTable)
+    Engine.Registry.Theme = themeTable
+    Engine.Signals.ThemeChanged:Fire(deepClone(themeTable))
+end
+
 -- //////////////////////////////////////////////////////////////////////////////////
--- // 5. SANDBOXED CODE EXECUTION
+-- // 6. SANDBOXED CODE EXECUTION
 -- //////////////////////////////////////////////////////////////////////////////////
 
 --- Executes the Lua code associated with a specific element.
--- @param elementID (string) The ID of the element whose code should be run.
 function Engine.ExecuteCode(elementID)
     local element = Engine.Registry.Elements[elementID]
+    -- Do nothing if element doesn't exist or has no code.
     if not element or not element.luaCode or element.luaCode:match("^%s*$") then
-        return -- Do nothing if element doesn't exist or has no code.
+        return
     end
 
     -- Create the sandboxed environment
     local env = {
         -- The API for linking elements
         API = API,
-        -- 'self' provides easy access to the element's own value
+        -- 'self' provides easy access to the element's own data
         self = {
             Value = element.value,
-            Properties = table.clone(element.properties) -- Read-only access to properties
+            Properties = deepClone(element.properties) -- Read-only access to properties
         },
         -- Standard safe libraries
         print = print,
@@ -253,38 +287,42 @@ function Engine.ExecuteCode(elementID)
         task = task,
         game = game, -- Pass the game object for game interactions
         -- Add other safe globals as needed
+        Color3 = Color3,
+        Vector3 = Vector3,
+        CFrame = CFrame,
+        Enum = Enum,
+        pairs = pairs,
+        ipairs = ipairs,
+        tostring = tostring,
     }
     
-    -- Load the user's code string within the sandboxed environment
     local func, err = loadstring(element.luaCode)
     if not func then
         API.Notify("Lua Error in '"..element.label.."'", "Syntax Error: " .. tostring(err))
-        warn("[GUI Engine] Syntax error in element '" .. element.label .. "': " .. tostring(err))
         return
     end
     
+    -- Set the environment for the function.
     setfenv(func, env)
     
-    -- Execute the function
+    -- Execute the function safely using a protected call.
     local success, execErr = pcall(func)
     if not success then
         API.Notify("Lua Error in '"..element.label.."'", "Runtime Error: " .. tostring(execErr))
-        warn("[GUI Engine] Runtime error in element '" .. element.label .. "': " .. tostring(execErr))
     end
 end
 
 -- //////////////////////////////////////////////////////////////////////////////////
--- // 6. CONFIGURATION STUBS
--- // These will fire signals that the top-level Main.lua script will handle.
+-- // 7. CONFIGURATION REQUESTS
+-- // These fire signals that the top-level Main.lua script will handle.
 -- //////////////////////////////////////////////////////////////////////////////////
 
-function Engine.SaveConfiguration()
+function Engine.RequestSave()
     Engine.Signals.SaveRequested:Fire()
 end
 
-function Engine.LoadConfiguration()
+function Engine.RequestLoad()
     Engine.Signals.LoadRequested:Fire()
 end
-
 
 return Engine
