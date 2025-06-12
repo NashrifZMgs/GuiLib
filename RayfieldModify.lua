@@ -14,6 +14,7 @@
     - Added a "Destroy GUI" button in the settings panel.
     - [FIX] Corrected element alignment for wider UI.
     - [FIX] Removed placeholder "button" text from buttons.
+    - [FIX-2] Repaired critical crash in the Notification system.
 
 ]]
 
@@ -78,7 +79,7 @@ end
 
 local requestsDisabled = true --getgenv and getgenv().DISABLE_RAYFIELD_REQUESTS
 local InterfaceBuild = '3K3W'
-local Release = "Build 1.672-NexusMod-Fix1"
+local Release = "Build 1.672-NexusMod-Fix2"
 local RayfieldFolder = "Rayfield"
 local ConfigurationFolder = RayfieldFolder.."/Configurations"
 local ConfigurationExtension = ".rfld"
@@ -1077,7 +1078,8 @@ function RayfieldLibrary:Notify(data) -- action e.g open messages
 
 		task.wait(1)
 
-		TweenService:Create(newNotification, TweenInfo.new(1, -90, 0, -Notifications:FindFirstChild("UIListLayout").Padding.Offset)}):Play()
+        -- Nexus-Lua CRITICAL FIX: Corrected the arguments for TweenService:Create
+		TweenService:Create(newNotification, TweenInfo.new(1, Enum.EasingStyle.Exponential), {Size = UDim2.new(1, -90, 0, -Notifications:FindFirstChild("UIListLayout").Padding.Offset)}):Play()
 
 		newNotification.Visible = false
 		newNotification:Destroy()
