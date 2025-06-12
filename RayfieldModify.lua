@@ -12,8 +12,8 @@
     - Replaced horizontal tabs with vertical navigation in the sidebar.
     - Added a hamburger menu to toggle the sidebar.
     - Added a "Destroy GUI" button in the settings panel.
-    - [FIX] Corrected a critical crash in the Notification system.
-    - [FIX-3] DEFINITIVE ALIGNMENT FIX: Corrected UIListLayout behavior for Input, Dropdown, and Keybind elements.
+    - Corrected a critical crash in the Notification system.
+    - [FIX-4] DEFINITIVE ALIGNMENT & CRASH FIX: Correctly targets and modifies the UIListLayout within affected elements to fix alignment and prevent crashes.
 
 ]]
 
@@ -78,7 +78,7 @@ end
 
 local requestsDisabled = true --getgenv and getgenv().DISABLE_RAYFIELD_REQUESTS
 local InterfaceBuild = '3K3W'
-local Release = "Build 1.672-NexusMod-Fix3"
+local Release = "Build 1.672-NexusMod-Fix4"
 local RayfieldFolder = "Rayfield"
 local ConfigurationFolder = RayfieldFolder.."/Configurations"
 local ConfigurationExtension = ".rfld"
@@ -700,9 +700,9 @@ local MPrompt = Rayfield:FindFirstChild('Prompt')
 local Topbar = Main.Topbar
 local Elements = Main.Elements
 local LoadingFrame = Main.LoadingFrame
-local Sidebar = Main.TabList -- Nexus-Lua: Repurposed TabList as Sidebar
+local Sidebar = Main.TabList 
 Sidebar.Name = "Sidebar"
-local Hamburger -- Nexus-Lua: To be created later
+local Hamburger 
 local dragBar = Rayfield:FindFirstChild('Drag')
 local dragInteract = dragBar and dragBar.Interact or nil
 local dragBarCosmetic = dragBar and dragBar.Drag or nil
@@ -713,17 +713,16 @@ local dragOffsetMobile = 150
 Rayfield.DisplayOrder = 100
 LoadingFrame.Version.Text = Release
 
--- Thanks to Latte Softworks for the Lucide integration for Roblox
 local Icons = useStudio and require(script.Parent.icons) or loadWithTimeout('https://raw.githubusercontent.com/SiriusSoftwareLtd/Rayfield/refs/heads/main/icons.lua')
--- Variables
 
+-- Variables
 local CFileName = nil
 local CEnabled = false
 local Minimised = false
 local Hidden = false
 local Debounce = false
 local searchOpen = false
-local sidebarVisible = true -- Nexus-Lua: State for sidebar
+local sidebarVisible = true
 local Notifications = Rayfield.Notifications
 
 local SelectedTheme = RayfieldLibrary.Theme.Default
@@ -807,7 +806,7 @@ local function getIcon(name : string): {id: number, imageRectSize: Vector2, imag
 
 	return asset
 end
--- Converts ID to asset URI. Returns rbxassetid://0 if ID is not a number
+
 local function getAssetUri(id: any): string
 	local assetUri = "rbxassetid://0" -- Default to empty image
 	if type(id) == "number" then
@@ -2596,9 +2595,11 @@ function RayfieldLibrary:CreateWindow(Settings)
 		function Tab:CreateInput(InputSettings)
 			local Input = Elements.Template.Input:Clone()
 			
-            -- Nexus-Lua DEFINITIVE ALIGNMENT FIX
-            Input.UIListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
-            Input.UIListLayout.Padding = UDim.new(0, 15)
+            local LayoutManager = Input:FindFirstChildOfClass("UIListLayout")
+            if LayoutManager then
+                LayoutManager.HorizontalAlignment = Enum.HorizontalAlignment.Left
+                LayoutManager.Padding = UDim.new(0, 15)
+            end
 
 			Input.Name = InputSettings.Name
 			Input.Title.Text = InputSettings.Name
@@ -2690,10 +2691,12 @@ function RayfieldLibrary:CreateWindow(Settings)
 		-- Dropdown
 		function Tab:CreateDropdown(DropdownSettings)
 			local Dropdown = Elements.Template.Dropdown:Clone()
-
-            -- Nexus-Lua DEFINITIVE ALIGNMENT FIX
-            Dropdown.UIListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
-            Dropdown.UIListLayout.Padding = UDim.new(0, 15)
+			
+            local LayoutManager = Dropdown:FindFirstChildOfClass("UIListLayout")
+            if LayoutManager then
+                LayoutManager.HorizontalAlignment = Enum.HorizontalAlignment.Left
+                LayoutManager.Padding = UDim.new(0, 15)
+            end
             
 			if string.find(DropdownSettings.Name,"closed") then
 				Dropdown.Name = "Dropdown"
@@ -3002,9 +3005,11 @@ function RayfieldLibrary:CreateWindow(Settings)
 			local CheckingForKey = false
 			local Keybind = Elements.Template.Keybind:Clone()
 
-            -- Nexus-Lua DEFINITIVE ALIGNMENT FIX
-            Keybind.UIListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
-            Keybind.UIListLayout.Padding = UDim.new(0, 15)
+            local LayoutManager = Keybind:FindFirstChildOfClass("UIListLayout")
+            if LayoutManager then
+                LayoutManager.HorizontalAlignment = Enum.HorizontalAlignment.Left
+                LayoutManager.Padding = UDim.new(0, 15)
+            end
             
 			Keybind.Name = KeybindSettings.Name
 			Keybind.Title.Text = KeybindSettings.Name
