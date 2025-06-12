@@ -1,7 +1,7 @@
 --[[
-    Nexus-Lua Script: Rayfield Sidebar Modification (v3 - Executor Aware)
-    Description: This script reliably finds the Rayfield UI by checking the same locations
-    the library does, preventing "Infinite Yield" errors on mobile executors.
+    Nexus-Lua Script: Rayfield Sidebar Modification (v4 - Typo Corrected)
+    Description: Fixed a critical typo related to UIListLayout.Padding that caused a script error.
+    The sidebar will now populate correctly.
 ]]
 
 -- Load the Rayfield library
@@ -22,27 +22,26 @@ local Window = Rayfield:CreateWindow({
 
 local TweenService = game:GetService("TweenService")
 
--- This function finds the correct parent for the Rayfield GUI, just like the library does.
+-- This function finds the correct parent for the Rayfield GUI
 local function FindRayfieldParent()
     if gethui and type(gethui) == "function" then
-        return gethui() -- Use the special UI parent on mobile executors
+        return gethui()
     else
-        return game:GetService("CoreGui") -- Fallback for other executors
+        return game:GetService("CoreGui")
     end
 end
 
 local CorrectParent = FindRayfieldParent()
 
--- We now wait for the Rayfield GUI to appear in the CORRECT parent location.
-local RayfieldGui = CorrectParent:WaitForChild("Rayfield", 15) -- Wait up to 15 seconds
+-- Wait for the Rayfield GUI to appear in the correct parent location
+local RayfieldGui = CorrectParent:WaitForChild("Rayfield", 15)
 
--- If the GUI is still not found after waiting, we stop the script to prevent further errors.
 if not RayfieldGui then
     warn("Nexus-Lua: Could not find the Rayfield GUI after waiting. The script cannot continue.")
     return
 end
 
--- Now that we have the GUI, we can safely get the other parts.
+-- Safely get the main UI components
 local MainFrame = RayfieldGui:WaitForChild("Main")
 local Topbar = MainFrame:WaitForChild("Topbar")
 local ElementsContainer = MainFrame:WaitForChild("Elements")
@@ -53,15 +52,16 @@ MainFrame.TabList.Visible = false
 -- Create the sidebar frame
 local SidebarFrame = Instance.new("Frame")
 SidebarFrame.Name = "CustomSidebar"
-SidebarFrame.Size = UDim2.new(0, 150, 1, -45) -- Full height minus topbar
-SidebarFrame.Position = UDim2.new(0, -150, 0, 45) -- Start off-screen
+SidebarFrame.Size = UDim2.new(0, 150, 1, -45)
+SidebarFrame.Position = UDim2.new(0, -150, 0, 45)
 SidebarFrame.BackgroundColor3 = Topbar.BackgroundColor3
 SidebarFrame.BorderSizePixel = 0
 SidebarFrame.ZIndex = 99
 SidebarFrame.Parent = MainFrame
 
+-- Add a list layout to the sidebar for the buttons
 local SidebarLayout = Instance.new("UIListLayout")
-SidebarLayout.Padding = Pading.new(0, 5)
+SidebarLayout.Padding = UDim.new(0, 5) -- CORRECTED THIS LINE
 SidebarLayout.SortOrder = Enum.SortOrder.LayoutOrder
 SidebarLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 SidebarLayout.Parent = SidebarFrame
@@ -138,7 +138,7 @@ function Window:CreateSidebarTab(tabName, icon)
 end
 
 local function SyncTheme()
-    task.wait(0.1) -- Delay to ensure Window.Theme has updated
+    task.wait(0.1) 
     local currentThemeName = Window.Theme or "Default"
     local theme = Rayfield.Theme[currentThemeName] or Rayfield.Theme.Default
 
