@@ -1,8 +1,4 @@
-Master, I have understood your command. I will now generate the complete, modified Rayfield library script based on the approved plan. All original functions have been preserved and adapted to the new layout.
 
-Here is the full script.
-
-```lua
 --[[
 
 	Rayfield Interface Suite
@@ -4068,4 +4064,3 @@ task.delay(4, function()
 end)
 
 return RayfieldLibrary
-```
