@@ -1,7 +1,7 @@
 --[[
-    Nexus-Lua Script: Rayfield Sidebar Modification
-    Description: This script modifies the Rayfield UI to use a collapsible sidebar for tab navigation,
-    optimizing it for mobile and touchscreen devices.
+    Nexus-Lua Script: Rayfield Sidebar Modification (v2 - Error Corrected)
+    Description: This script modifies the Rayfield UI to use a collapsible sidebar.
+    It now reliably waits for the UI to be created before modifying it to prevent errors.
 ]]
 
 -- Load the Rayfield library
@@ -18,14 +18,16 @@ local Window = Rayfield:CreateWindow({
     }
 })
 
--- SECTION 1: UI MODIFICATION
--- We wait for a brief moment to ensure all Rayfield objects are loaded before we modify them.
-task.wait(0.1)
+-- SECTION 1: UI MODIFICATION (RELIABLE METHOD)
 
+-- We will now reliably wait for the Rayfield GUI to be created before we try to change it.
+local CoreGui = game:GetService("CoreGui")
 local TweenService = game:GetService("TweenService")
-local MainFrame = Rayfield.Main
-local Topbar = MainFrame.Topbar
-local ElementsContainer = MainFrame.Elements
+
+local RayfieldGui = CoreGui:WaitForChild("Rayfield")
+local MainFrame = RayfieldGui:WaitForChild("Main")
+local Topbar = MainFrame:WaitForChild("Topbar")
+local ElementsContainer = MainFrame:WaitForChild("Elements")
 
 -- Hide the default horizontal tab list
 MainFrame.TabList.Visible = false
@@ -35,7 +37,7 @@ local SidebarFrame = Instance.new("Frame")
 SidebarFrame.Name = "CustomSidebar"
 SidebarFrame.Size = UDim2.new(0, 150, 1, -45) -- Full height minus topbar
 SidebarFrame.Position = UDim2.new(0, -150, 0, 45) -- Start off-screen
-SidebarFrame.BackgroundColor3 = MainFrame.BackgroundColor3
+SidebarFrame.BackgroundColor3 = Topbar.BackgroundColor3
 SidebarFrame.BorderSizePixel = 0
 SidebarFrame.ZIndex = 99
 SidebarFrame.Parent = MainFrame
@@ -61,7 +63,7 @@ HamburgerButton.Parent = Topbar
 
 -- Make the main title shift to the right to make space for the hamburger icon
 Topbar.Title.Position = UDim2.new(0, 50, 0.5, 0)
-if Topbar:FindFirstChild("Icon") then
+if Topbar:FindFirstChild("Icon") and Topbar.Icon.Visible then
     Topbar.Icon.Position = UDim2.new(0, 50, 0.5, 0)
     Topbar.Title.Position = UDim2.new(0, 90, 0.5, 0)
 end
@@ -95,7 +97,6 @@ end)
 -- This new function will create a Rayfield tab AND a corresponding button in our new sidebar
 function Window:CreateSidebarTab(tabName, icon)
     -- This first part creates the actual tab page where elements will go.
-    -- We are "wrapping" the original function.
     local Tab = Window:CreateTab(tabName, icon)
 
     -- This second part creates our custom button for the sidebar.
@@ -103,7 +104,7 @@ function Window:CreateSidebarTab(tabName, icon)
     TabButton.Name = tabName .. "Button"
     TabButton.Text = " " .. tabName
     TabButton.Size = UDim2.new(0.9, 0, 0, 35)
-    TabButton.BackgroundColor3 = MainFrame.BackgroundColor3
+    TabButton.BackgroundColor3 = SidebarFrame.BackgroundColor3
     TabButton.TextColor3 = Topbar.Title.TextColor3
     TabButton.TextXAlignment = Enum.TextXAlignment.Left
     TabButton.Font = Enum.Font.GothamSemibold
@@ -117,21 +118,17 @@ function Window:CreateSidebarTab(tabName, icon)
     
     -- Interaction animations for the button
     TabButton.MouseEnter:Connect(function()
-        TweenService:Create(TabButton, TweenInfo.new(0.2), { BackgroundColor3 = Color3.fromRGB(60, 60, 60) }):Play()
+        TweenService:Create(TabButton, TweenInfo.new(0.2), { BackgroundColor3 = Color3.fromRGB(80, 80, 80) }):Play()
     end)
     TabButton.MouseLeave:Connect(function()
-        TweenService:Create(TabButton, TweenInfo.new(0.2), { BackgroundColor3 = MainFrame.BackgroundColor3 }):Play()
+        TweenService:Create(TabButton, TweenInfo.new(0.2), { BackgroundColor3 = SidebarFrame.BackgroundColor3 }):Play()
     end)
     
     -- Main logic: When a sidebar button is clicked...
     TabButton.MouseButton1Click:Connect(function()
-        -- Find the correct content page inside Rayfield's structure
         local pageToJumpTo = ElementsContainer:FindFirstChild(tabName)
         if pageToJumpTo then
-            -- Tell Rayfield to switch to that page
             ElementsContainer.UIPageLayout:JumpTo(pageToJumpTo)
-            
-            -- Automatically hide the sidebar for a smooth experience
             ToggleSidebar(false)
         end
     end)
@@ -142,12 +139,16 @@ end
 
 -- Function to keep the custom UI elements matching the theme if it changes
 local function SyncTheme()
-    local theme = Rayfield.Theme[Window.Theme] or Rayfield.Theme.Default
-    SidebarFrame.BackgroundColor3 = theme.Background
+    -- This requires a small delay because Window.Theme might not be set instantly
+    task.wait() 
+    local currentThemeName = Window.Theme or "Default"
+    local theme = Rayfield.Theme[currentThemeName] or Rayfield.Theme.Default
+
+    SidebarFrame.BackgroundColor3 = theme.Topbar
     HamburgerButton.ImageColor3 = theme.TextColor
     for _, button in pairs(SidebarFrame:GetChildren()) do
         if button:IsA("TextButton") then
-            button.BackgroundColor3 = theme.Background
+            button.BackgroundColor3 = theme.Topbar
             button.TextColor3 = theme.TextColor
             button.UIStroke.Color = theme.ElementStroke
         end
@@ -159,7 +160,6 @@ local oldModifyTheme = Window.ModifyTheme
 function Window.ModifyTheme(newTheme)
     oldModifyTheme(newTheme)
     Window.Theme = type(newTheme) == "string" and newTheme or "Custom"
-    task.wait(0.1)
     SyncTheme()
 end
 
