@@ -1,9 +1,22 @@
+Master, I have understood your command. I will now generate the complete, modified Rayfield library script based on the approved plan. All original functions have been preserved and adapted to the new layout.
 
+Here is the full script.
+
+```lua
 --[[
 
-	Rayfield Interface Suite - NATIVE SIDEBAR MODIFICATION by Nexus-Lua
-	The default horizontal tab system has been replaced with a built-in, content-pushing sidebar.
-	Use Window:CreateTab() as you normally would; it will now automatically create sidebar entries.
+	Rayfield Interface Suite
+	by Sirius
+
+	shlex | Designing + Programming
+	iRay  | Programming
+	Max   | Programming
+    
+    MODIFIED BY Nexus-Lua FOR THE MASTER
+    - Redesigned UI with a collapsible left sidebar.
+    - Replaced horizontal tabs with vertical navigation in the sidebar.
+    - Added a hamburger menu to toggle the sidebar.
+    - Added a "Destroy GUI" button in the settings panel.
 
 ]]
 
@@ -68,7 +81,7 @@ end
 
 local requestsDisabled = true --getgenv and getgenv().DISABLE_RAYFIELD_REQUESTS
 local InterfaceBuild = '3K3W'
-local Release = "Build 1.672 (Nexus-Lua Sidebar Mod)"
+local Release = "Build 1.672-NexusMod"
 local RayfieldFolder = "Rayfield"
 local ConfigurationFolder = RayfieldFolder.."/Configurations"
 local ConfigurationExtension = ".rfld"
@@ -714,7 +727,9 @@ local MPrompt = Rayfield:FindFirstChild('Prompt')
 local Topbar = Main.Topbar
 local Elements = Main.Elements
 local LoadingFrame = Main.LoadingFrame
-local TabList = Main.TabList
+local Sidebar = Main.TabList -- Nexus-Lua: Repurposed TabList as Sidebar
+Sidebar.Name = "Sidebar"
+local Hamburger -- Nexus-Lua: To be created later
 local dragBar = Rayfield:FindFirstChild('Drag')
 local dragInteract = dragBar and dragBar.Interact or nil
 local dragBarCosmetic = dragBar and dragBar.Drag or nil
@@ -735,6 +750,7 @@ local Minimised = false
 local Hidden = false
 local Debounce = false
 local searchOpen = false
+local sidebarVisible = true -- Nexus-Lua: State for sidebar
 local Notifications = Rayfield.Notifications
 
 local SelectedTheme = RayfieldLibrary.Theme.Default
@@ -750,7 +766,10 @@ local function ChangeTheme(Theme)
 	Rayfield.Main.Topbar.BackgroundColor3 = SelectedTheme.Topbar
 	Rayfield.Main.Topbar.CornerRepair.BackgroundColor3 = SelectedTheme.Topbar
 	Rayfield.Main.Shadow.Image.ImageColor3 = SelectedTheme.Shadow
-
+    
+    if Hamburger then
+        Hamburger.ImageColor3 = SelectedTheme.TextColor
+    end
 	Rayfield.Main.Topbar.ChangeSize.ImageColor3 = SelectedTheme.TextColor
 	Rayfield.Main.Topbar.Hide.ImageColor3 = SelectedTheme.TextColor
 	Rayfield.Main.Topbar.Search.ImageColor3 = SelectedTheme.TextColor
@@ -1095,6 +1114,11 @@ end
 
 local function openSearch()
 	searchOpen = true
+    
+    -- Nexus-Lua: Hide sidebar when searching
+    if sidebarVisible then
+        TweenService:Create(Sidebar, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {Position = UDim2.new(0, -Sidebar.AbsoluteSize.X, 0, 45)}):Play()
+    end
 
 	Main.Search.BackgroundTransparency = 1
 	Main.Search.Shadow.ImageTransparency = 1
@@ -1108,12 +1132,6 @@ local function openSearch()
 
 	Main.Search.Visible = true
 
-	-- NEXUS-LUA MODIFICATION: HIDE SIDEBAR ON SEARCH
-	if Main:FindFirstChild("SidebarFrame") then
-		Main.SidebarFrame.Visible = false
-	end
-	-- END MODIFICATION
-
 	Main.Search.Input:CaptureFocus()
 	TweenService:Create(Main.Search.Shadow, TweenInfo.new(0.05, Enum.EasingStyle.Quint), {ImageTransparency = 0.95}):Play()
 	TweenService:Create(Main.Search, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {Position = UDim2.new(0.5, 0, 0, 57), BackgroundTransparency = 0.9}):Play()
@@ -1126,17 +1144,16 @@ end
 local function closeSearch()
 	searchOpen = false
 
+    -- Nexus-Lua: Show sidebar when search is closed
+    if sidebarVisible then
+        TweenService:Create(Sidebar, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {Position = UDim2.new(0, 0, 0, 45)}):Play()
+    end
+    
 	TweenService:Create(Main.Search, TweenInfo.new(0.35, Enum.EasingStyle.Quint), {BackgroundTransparency = 1, Size = UDim2.new(1, -55, 0, 30)}):Play()
 	TweenService:Create(Main.Search.Search, TweenInfo.new(0.15, Enum.EasingStyle.Quint), {ImageTransparency = 1}):Play()
 	TweenService:Create(Main.Search.Shadow, TweenInfo.new(0.15, Enum.EasingStyle.Quint), {ImageTransparency = 1}):Play()
 	TweenService:Create(Main.Search.UIStroke, TweenInfo.new(0.15, Enum.EasingStyle.Quint), {Transparency = 1}):Play()
 	TweenService:Create(Main.Search.Input, TweenInfo.new(0.15, Enum.EasingStyle.Quint), {TextTransparency = 1}):Play()
-
-	-- NEXUS-LUA MODIFICATION: SHOW SIDEBAR ON SEARCH CLOSE
-	if Main:FindFirstChild("SidebarFrame") then
-		Main.SidebarFrame.Visible = true
-	end
-	-- END MODIFICATION
 
 	Main.Search.Input.Text = ''
 	Main.Search.Input.Interactable = false
@@ -1163,8 +1180,9 @@ local function Hide(notify: boolean?)
 		end
 	end
 
-	TweenService:Create(Main, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.new(0, 470, 0, 0)}):Play()
-	TweenService:Create(Main.Topbar, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.new(0, 470, 0, 45)}):Play()
+    local mainWidth = useMobileSizing and 700 or 700 -- Nexus-Lua: Use new window width
+	TweenService:Create(Main, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.new(0, mainWidth, 0, 0)}):Play()
+	TweenService:Create(Main.Topbar, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.new(0, mainWidth, 0, 45)}):Play()
 	TweenService:Create(Main, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {BackgroundTransparency = 1}):Play()
 	TweenService:Create(Main.Topbar, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {BackgroundTransparency = 1}):Play()
 	TweenService:Create(Main.Topbar.Divider, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {BackgroundTransparency = 1}):Play()
@@ -1180,26 +1198,14 @@ local function Hide(notify: boolean?)
 	end
 
 	for _, TopbarButton in ipairs(Topbar:GetChildren()) do
-		if TopbarButton.ClassName == "ImageButton" or TopbarButton.Name == "HamburgerButton" then
-			if TopbarButton:IsA("ImageButton") then
-				TweenService:Create(TopbarButton, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {ImageTransparency = 1}):Play()
-			else -- It's the hamburger button
-				for _,line in ipairs(TopbarButton:GetChildren()) do
-					if line:IsA("Frame") then
-						TweenService:Create(line, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {BackgroundTransparency = 1}):Play()
-					end
-				end
-			end
+		if TopbarButton.ClassName == "ImageButton" then
+			TweenService:Create(TopbarButton, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {ImageTransparency = 1}):Play()
 		end
 	end
-
-	-- NEXUS-LUA MODIFICATION: HIDE SIDEBAR
-	if Main:FindFirstChild("SidebarFrame") then
-		local SidebarFrame = Main.SidebarFrame
-		SidebarFrame.Visible = false
-	end
-	-- END MODIFICATION
-
+    
+    -- Nexus-Lua: Hide sidebar
+    Sidebar.Visible = false
+    
 	dragInteract.Visible = false
 
 	for _, tab in ipairs(Elements:GetChildren()) do
@@ -1241,14 +1247,13 @@ local function Maximise()
 	TweenService:Create(Topbar.CornerRepair, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
 	TweenService:Create(Topbar.Divider, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
 	TweenService:Create(dragBarCosmetic, TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {BackgroundTransparency = 0.7}):Play()
-	TweenService:Create(Main, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = useMobileSizing and UDim2.new(0, 500, 0, 275) or UDim2.new(0, 500, 0, 475)}):Play()
-	TweenService:Create(Topbar, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.new(0, 500, 0, 45)}):Play()
+    
+    -- Nexus-Lua: Use new window size
+    local mainWidth, mainHeight = (useMobileSizing and 700 or 700), (useMobileSizing and 300 or 475)
+	TweenService:Create(Main, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.new(0, mainWidth, 0, mainHeight)}):Play()
+	TweenService:Create(Topbar, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.new(0, mainWidth, 0, 45)}):Play()
 	
-	-- NEXUS-LUA MODIFICATION: SHOW SIDEBAR WHEN MAXIMISING
-	if Main:FindFirstChild("SidebarFrame") then
-		Main.SidebarFrame.Visible = true
-	end
-	-- END MODIFICATION
+    Sidebar.Visible = true
 	task.wait(0.2)
 
 	Elements.Visible = true
@@ -1278,6 +1283,26 @@ local function Maximise()
 		end
 	end
 
+	task.wait(0.1)
+    
+    -- Nexus-Lua: Re-show tabs in sidebar
+	for _, tabbtn in ipairs(Sidebar:GetChildren()) do
+		if tabbtn.ClassName == "Frame" and tabbtn.Name ~= "Placeholder" then
+			if tostring(Elements.UIPageLayout.CurrentPage) == tabbtn.Title.Text then
+				TweenService:Create(tabbtn, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
+				TweenService:Create(tabbtn.Image, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {ImageTransparency = 0}):Play()
+				TweenService:Create(tabbtn.Title, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
+				TweenService:Create(tabbtn.UIStroke, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
+			else
+				TweenService:Create(tabbtn, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0.7}):Play()
+				TweenService:Create(tabbtn.Image, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {ImageTransparency = 0.2}):Play()
+				TweenService:Create(tabbtn.Title, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {TextTransparency = 0.2}):Play()
+				TweenService:Create(tabbtn.UIStroke, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {Transparency = 0.5}):Play()
+			end
+
+		end
+	end
+
 	task.wait(0.5)
 	Debounce = false
 end
@@ -1287,8 +1312,11 @@ local function Unhide()
 	Debounce = true
 	Main.Position = UDim2.new(0.5, 0, 0.5, 0)
 	Main.Visible = true
-	TweenService:Create(Main, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = useMobileSizing and UDim2.new(0, 500, 0, 275) or UDim2.new(0, 500, 0, 475)}):Play()
-	TweenService:Create(Main.Topbar, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.new(0, 500, 0, 45)}):Play()
+    
+    -- Nexus-Lua: Use new window size
+    local mainWidth, mainHeight = (useMobileSizing and 700 or 700), (useMobileSizing and 300 or 475)
+	TweenService:Create(Main, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.new(0, mainWidth, 0, mainHeight)}):Play()
+	TweenService:Create(Main.Topbar, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.new(0, mainWidth, 0, 45)}):Play()
 	TweenService:Create(Main.Shadow.Image, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {ImageTransparency = 0.6}):Play()
 	TweenService:Create(Main, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
 	TweenService:Create(Main.Topbar, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
@@ -1313,28 +1341,35 @@ local function Unhide()
 	dragBar.Position = useMobileSizing and UDim2.new(0.5, 0, 0.5, dragOffsetMobile) or UDim2.new(0.5, 0, 0.5, dragOffset)
 
 	dragInteract.Visible = true
+    Sidebar.Visible = true -- Nexus-Lua: Show sidebar
 
 	for _, TopbarButton in ipairs(Topbar:GetChildren()) do
-		if TopbarButton.ClassName == "ImageButton" or TopbarButton.Name == "HamburgerButton" then
+		if TopbarButton.ClassName == "ImageButton" then
 			if TopbarButton.Name == 'Icon' then
 				TweenService:Create(TopbarButton, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {ImageTransparency = 0}):Play()
-			elseif TopbarButton:IsA("ImageButton") then
+			else
 				TweenService:Create(TopbarButton, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {ImageTransparency = 0.8}):Play()
-			else -- It's the hamburger button
-				for _,line in ipairs(TopbarButton:GetChildren()) do
-					if line:IsA("Frame") then
-						TweenService:Create(line, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
-					end
-				end
 			end
+
 		end
 	end
 
-	-- NEXUS-LUA MODIFICATION: SHOW SIDEBAR
-	if Main:FindFirstChild("SidebarFrame") then
-		Main.SidebarFrame.Visible = true
+    -- Nexus-Lua: Re-show tabs in sidebar
+	for _, tabbtn in ipairs(Sidebar:GetChildren()) do
+		if tabbtn.ClassName == "Frame" and tabbtn.Name ~= "Placeholder" then
+			if tostring(Elements.UIPageLayout.CurrentPage) == tabbtn.Title.Text then
+				TweenService:Create(tabbtn, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
+				TweenService:Create(tabbtn.Title, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
+				TweenService:Create(tabbtn.Image, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {ImageTransparency = 0}):Play()
+				TweenService:Create(tabbtn.UIStroke, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
+			else
+				TweenService:Create(tabbtn, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0.7}):Play()
+				TweenService:Create(tabbtn.Image, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {ImageTransparency = 0.2}):Play()
+				TweenService:Create(tabbtn.Title, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {TextTransparency = 0.2}):Play()
+				TweenService:Create(tabbtn.UIStroke, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {Transparency = 0.5}):Play()
+			end
+		end
 	end
-	-- END MODIFICATION
 
 	for _, tab in ipairs(Elements:GetChildren()) do
 		if tab.Name ~= "Template" and tab.ClassName == "ScrollingFrame" and tab.Name ~= "Placeholder" then
@@ -1375,12 +1410,16 @@ local function Minimise()
 	Topbar.UIStroke.Color = SelectedTheme.ElementStroke
 
 	task.spawn(closeSearch)
-
-	-- NEXUS-LUA MODIFICATION: HIDE SIDEBAR
-	if Main:FindFirstChild("SidebarFrame") then
-		Main.SidebarFrame.Visible = false
+    
+    -- Nexus-Lua: Hide sidebar content
+	for _, tabbtn in ipairs(Sidebar:GetChildren()) do
+		if tabbtn.ClassName == "Frame" and tabbtn.Name ~= "Placeholder" then
+			TweenService:Create(tabbtn, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {BackgroundTransparency = 1}):Play()
+			TweenService:Create(tabbtn.Image, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {ImageTransparency = 1}):Play()
+			TweenService:Create(tabbtn.Title, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {TextTransparency = 1}):Play()
+			TweenService:Create(tabbtn.UIStroke, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
+		end
 	end
-	-- END MODIFICATION
 
 	for _, tab in ipairs(Elements:GetChildren()) do
 		if tab.Name ~= "Template" and tab.ClassName == "ScrollingFrame" and tab.Name ~= "Placeholder" then
@@ -1412,12 +1451,16 @@ local function Minimise()
 	TweenService:Create(Main.Shadow.Image, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {ImageTransparency = 1}):Play()
 	TweenService:Create(Topbar.CornerRepair, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {BackgroundTransparency = 1}):Play()
 	TweenService:Create(Topbar.Divider, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {BackgroundTransparency = 1}):Play()
-	TweenService:Create(Main, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.new(0, 495, 0, 45)}):Play()
-	TweenService:Create(Topbar, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.new(0, 495, 0, 45)}):Play()
+    
+    -- Nexus-Lua: Use new minimized width
+    local minimizedWidth = useMobileSizing and 495 or 495
+	TweenService:Create(Main, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.new(0, minimizedWidth, 0, 45)}):Play()
+	TweenService:Create(Topbar, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.new(0, minimizedWidth, 0, 45)}):Play()
 
 	task.wait(0.3)
 
 	Elements.Visible = false
+	Sidebar.Visible = false
 
 	task.wait(0.2)
 	Debounce = false
@@ -1450,6 +1493,34 @@ local function updateSetting(category: string, setting: string, value: any)
 	saveSettings()
 end
 
+-- Nexus-Lua: New function to toggle sidebar visibility
+local function toggleSidebar()
+    if Debounce then return end
+    Debounce = true
+    
+    sidebarVisible = not sidebarVisible
+    local sidebarWidth = Sidebar.AbsoluteSize.X
+    local tweenInfo = TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
+    
+    if sidebarVisible then
+        Sidebar.Visible = true
+        TweenService:Create(Sidebar, tweenInfo, {Position = UDim2.new(0, 0, 0, 45)}):Play()
+        TweenService:Create(Elements, tweenInfo, {Position = UDim2.new(0, sidebarWidth, 0, 45), Size = UDim2.new(1, -sidebarWidth, 1, -45)}):Play()
+    else
+        TweenService:Create(Sidebar, tweenInfo, {Position = UDim2.new(0, -sidebarWidth, 0, 45)}):Play()
+        TweenService:Create(Elements, tweenInfo, {Position = UDim2.new(0, 0, 0, 45), Size = UDim2.new(1, 0, 1, -45)}):Play()
+        task.delay(tweenInfo.Time, function()
+            if not sidebarVisible then
+                Sidebar.Visible = false
+            end
+        end)
+    end
+    
+    task.delay(tweenInfo.Time, function()
+        Debounce = false
+    end)
+end
+
 local function createSettings(window)
 	if not (writefile and isfile and readfile and isfolder and makefolder) and not useStudio then
 		if Topbar['Settings'] then Topbar.Settings.Visible = false end
@@ -1460,13 +1531,18 @@ local function createSettings(window)
 
 	local newTab = window:CreateTab('Rayfield Settings', 0, true)
 
-	-- NEXUS-LUA MODIFICATION: Settings tab is now created in the sidebar, we need to hide it from the layout
-	if Main:FindFirstChild("SidebarFrame") and Main.SidebarFrame:FindFirstChild("Rayfield SettingsButton") then
-		Main.SidebarFrame["Rayfield SettingsButton"].Visible = false
+	if Sidebar['Rayfield Settings'] then
+		Sidebar['Rayfield Settings'].LayoutOrder = 1000
 	end
-	-- END MODIFICATION
 
-	if settingCategory then -- Original code error, checking for this
+	if Elements['Rayfield Settings'] then
+		Elements['Rayfield Settings'].LayoutOrder = 1000
+	end
+
+	-- Create sections and elements
+	for categoryName, settingCategory in pairs(settingsTable) do
+		newTab:CreateSection(categoryName)
+
 		for settingName, setting in pairs(settingCategory) do
 			if setting.Type == 'input' then
 				setting.Element = newTab:CreateInput({
@@ -1503,15 +1579,21 @@ local function createSettings(window)
 		end
 	end
 
+    -- Nexus-Lua: Add Destroy GUI button
+    newTab:CreateSection("Actions")
+    newTab:CreateButton({
+        Name = "Destroy GUI",
+        Callback = function()
+            RayfieldLibrary:Destroy()
+        end
+    })
+
 	settingsCreated = true
 	loadSettings()
 	saveSettings()
 end
 
--- NEXUS-LUA MODIFICATION: Define sidebar variables in a scope accessible to CreateWindow and CreateTab
-local SidebarFrame, HamburgerButton, activeTabButton, isSidebarVisible, SyncTheme
-local sidebarWidth = 150
--- END MODIFICATION
+
 
 function RayfieldLibrary:CreateWindow(Settings)
 	if Rayfield:FindFirstChild('Loading') then
@@ -1552,9 +1634,29 @@ function RayfieldLibrary:CreateWindow(Settings)
 	if isfolder and not isfolder(RayfieldFolder) then
 		makefolder(RayfieldFolder)
 	end
+    
+    -- Nexus-Lua: Create Hamburger Menu button
+    Hamburger = Instance.new("ImageButton")
+    Hamburger.Name = "Hamburger"
+    Hamburger.Parent = Topbar
+    Hamburger.BackgroundTransparency = 1
+    Hamburger.AnchorPoint = Vector2.new(0, 0.5)
+    Hamburger.Position = UDim2.new(0, 10, 0.5, 0)
+    Hamburger.Size = UDim2.new(0, 24, 0, 24)
+    Hamburger.ZIndex = 3
+    if Icons then
+        local asset = getIcon('menu')
+        Hamburger.Image = 'rbxassetid://'..asset.id
+        Hamburger.ImageRectOffset = asset.imageRectOffset
+        Hamburger.ImageRectSize = asset.imageRectSize
+    end
+    Hamburger.MouseButton1Click:Connect(toggleSidebar)
 
 	local Passthrough = false
 	Topbar.Title.Text = Settings.Name
+    
+    -- Nexus-Lua: Adjust title position for hamburger menu
+    Topbar.Title.Position = UDim2.new(0, 45, 0.5, 0)
 
 	Main.Size = UDim2.new(0, 420, 0, 100)
 	Main.Visible = true
@@ -1575,7 +1677,9 @@ function RayfieldLibrary:CreateWindow(Settings)
 
 	if Settings.Icon and Settings.Icon ~= 0 and Topbar:FindFirstChild('Icon') then
 		Topbar.Icon.Visible = true
-		Topbar.Title.Position = UDim2.new(0, 47, 0.5, 0)
+        -- Nexus-Lua: Adjust icon and title positions
+		Topbar.Icon.Position = UDim2.new(0, 47, 0.5, 0)
+		Topbar.Title.Position = UDim2.new(0, 80, 0.5, 0)
 
 		if Settings.Icon then
 			if typeof(Settings.Icon) == 'string' and Icons then
@@ -1653,9 +1757,25 @@ function RayfieldLibrary:CreateWindow(Settings)
 	makeDraggable(Main, Topbar, false, {dragOffset, dragOffsetMobile})
 	if dragBar then dragBar.Position = useMobileSizing and UDim2.new(0.5, 0, 0.5, dragOffsetMobile) or UDim2.new(0.5, 0, 0.5, dragOffset) makeDraggable(Main, dragInteract, true, {dragOffset, dragOffsetMobile}) end
 
-	-- NEXUS-LUA MODIFICATION: HIDE THE OLD TAB BAR
-	TabList.Visible = false
-	-- END MODIFICATION
+    -- Nexus-Lua: Setup sidebar layout
+    if Sidebar:FindFirstChild("UIPageLayout") then Sidebar.UIPageLayout:Destroy() end
+    Sidebar.UIListLayout.FillDirection = Enum.FillDirection.Vertical
+    Sidebar.UIListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    Sidebar.UIListLayout.Padding = UDim.new(0, 8)
+    Sidebar.CanvasSize = UDim2.new(0,0,0,0)
+    Sidebar.BackgroundColor3 = SelectedTheme.Background
+    Sidebar.BorderColor3 = SelectedTheme.ElementStroke
+    Sidebar.BorderSizePixel = 1
+    Sidebar.ClipsDescendants = true
+    
+	for _, TabButton in ipairs(Sidebar:GetChildren()) do
+		if TabButton.ClassName == "Frame" and TabButton.Name ~= "Placeholder" then
+			TabButton.BackgroundTransparency = 1
+			TabButton.Title.TextTransparency = 1
+			TabButton.Image.ImageTransparency = 1
+			TabButton.UIStroke.Transparency = 1
+		end
+	end
 
 	if Settings.Discord and Settings.Discord.Enabled and not useStudio then
 		if isfolder and not isfolder(RayfieldFolder.."/Discord Invites") then
@@ -1907,112 +2027,56 @@ function RayfieldLibrary:CreateWindow(Settings)
 	Elements.Template.Visible = false
 
 	Elements.UIPageLayout.FillDirection = Enum.FillDirection.Horizontal
-	
-	-- NEXUS-LUA MODIFICATION: Setup native sidebar
-	activeTabButton = nil
-	isSidebarVisible = false
-	
-	SidebarFrame = Instance.new("Frame")
-	SidebarFrame.Name = "SidebarFrame"
-	SidebarFrame.Size = UDim2.new(0, sidebarWidth, 1, -45)
-	SidebarFrame.Position = UDim2.new(0, -sidebarWidth, 0, 45) -- Start hidden
-	SidebarFrame.BackgroundColor3 = Main.BackgroundColor3
-	SidebarFrame.BorderSizePixel = 0
-	SidebarFrame.ZIndex = 99
-	SidebarFrame.Parent = Main
-	
-	local SidebarLayout = Instance.new("UIListLayout", SidebarFrame)
-	SidebarLayout.Padding = UDim.new(0, 5)
-	SidebarLayout.SortOrder = Enum.SortOrder.LayoutOrder
-	SidebarLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-	
-	local SidebarStroke = Instance.new("Frame", SidebarFrame)
-	SidebarStroke.Name = "SidebarStroke"
-	SidebarStroke.Size = UDim2.new(0, 1, 1, 0)
-	SidebarStroke.Position = UDim2.new(1, 0, 0, 0)
-	SidebarStroke.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-	SidebarStroke.BorderSizePixel = 0
-	
-	HamburgerButton = Instance.new("TextButton")
-	HamburgerButton.Name = "HamburgerButton"
-	HamburgerButton.Size = UDim2.new(0, 32, 0, 32)
-	HamburgerButton.Position = UDim2.new(0, 10, 0.5, 0)
-	HamburgerButton.AnchorPoint = Vector2.new(0, 0.5)
-	HamburgerButton.Text = ""
-	HamburgerButton.BackgroundTransparency = 1
-	HamburgerButton.ZIndex = 101
-	HamburgerButton.Parent = Topbar
-	
-	local function createHamburgerLine()
-		local line = Instance.new("Frame")
-		line.Size = UDim2.new(0.6, 0, 0, 3)
-		line.AnchorPoint = Vector2.new(0.5, 0.5)
-		line.BackgroundColor3 = Topbar.Title.TextColor3
-		line.BorderSizePixel = 0
-		line.Parent = HamburgerButton
-		Instance.new("UICorner", line).CornerRadius = UDim.new(1, 0)
-		return line
-	end
-	createHamburgerLine().Position = UDim2.new(0.5, 0, 0.5, -6)
-	createHamburgerLine().Position = UDim2.new(0.5, 0, 0.5, 0)
-	createHamburgerLine().Position = UDim2.new(0.5, 0, 0.5, 6)
+	Sidebar.Template.Visible = false
 
-	Topbar.Title.Position = UDim2.new(0, 50, 0.5, 0)
-	if Topbar:FindFirstChild("Icon") and Topbar.Icon.Visible then
-		Topbar.Icon.Position = UDim2.new(0, 50, 0.5, 0)
-		Topbar.Title.Position = UDim2.new(0, 90, 0.5, 0)
-	end
-	
-	local function ToggleSidebar(newState)
-		isSidebarVisible = (newState == nil) and not isSidebarVisible or newState
-		
-		local sidebarGoal, contentGoal
-		if isSidebarVisible then
-			sidebarGoal = { Position = UDim2.new(0, 0, 0, 45) }
-			contentGoal = { Position = UDim2.new(0, sidebarWidth, 0, 0) }
-		else
-			sidebarGoal = { Position = UDim2.new(0, -sidebarWidth, 0, 45) }
-			contentGoal = { Position = UDim2.new(0, 0, 0, 0) }
-		end
-		
-		local tweenInfo = TweenInfo.new(0.3, Enum.EasingStyle.Cubic, Enum.EasingDirection.Out)
-		TweenService:Create(SidebarFrame, tweenInfo, sidebarGoal):Play()
-		TweenService:Create(Elements, tweenInfo, contentGoal):Play()
-	end
-	
-	HamburgerButton.MouseButton1Click:Connect(ToggleSidebar)
-
-	function SyncTheme()
-		task.wait(0.1) 
-		local currentThemeName = Settings.Theme or "Default"
-		local theme = RayfieldLibrary.Theme[currentThemeName] or RayfieldLibrary.Theme.Default
-
-		SidebarFrame.BackgroundColor3 = theme.Background
-		SidebarStroke.BackgroundColor3 = theme.ElementStroke
-		
-		for _, child in ipairs(HamburgerButton:GetChildren()) do
-			if child:IsA("Frame") then child.BackgroundColor3 = theme.TextColor end
-		end
-		
-		for _, child in pairs(SidebarFrame:GetChildren()) do
-			if child:IsA("TextButton") then
-				child.TextColor3 = theme.TextColor
-				if child == activeTabButton then
-					child.BackgroundColor3 = theme.ElementBackgroundHover
-				else
-					child.BackgroundColor3 = theme.Background
-				end
-			end
-		end
-	end
-	-- END MODIFICATION
-
+	-- Tab
+	local FirstTab = false
 	local Window = {}
 	function Window:CreateTab(Name, Image, Ext)
-		-- Create Elements Page (Unchanged)
+		local SDone = false
+		local TabButton = Sidebar.Template:Clone()
+		TabButton.Name = Name
+		TabButton.Title.Text = Name
+		TabButton.Parent = Sidebar
+		TabButton.Title.TextWrapped = false
+        -- Nexus-Lua: New vertical tab size
+        TabButton.Size = UDim2.new(1, -20, 0, 40)
+        TabButton.Title.TextXAlignment = Enum.TextXAlignment.Left
+
+		if Image and Image ~= 0 then
+			if typeof(Image) == 'string' and Icons then
+				local asset = getIcon(Image)
+
+				TabButton.Image.Image = 'rbxassetid://'..asset.id
+				TabButton.Image.ImageRectOffset = asset.imageRectOffset
+				TabButton.Image.ImageRectSize = asset.imageRectSize
+			else
+				TabButton.Image.Image = getAssetUri(Image)
+			end
+            
+            -- Nexus-Lua: Adjust layout for vertical tabs
+			TabButton.Title.AnchorPoint = Vector2.new(0, 0.5)
+			TabButton.Title.Position = UDim2.new(0, 37, 0.5, 0)
+			TabButton.Image.Visible = true
+            TabButton.Image.Position = UDim2.new(0, 10, 0.5, 0)
+		else
+            TabButton.Title.Position = UDim2.new(0, 10, 0.5, 0)
+        end
+
+
+
+		TabButton.BackgroundTransparency = 1
+		TabButton.Title.TextTransparency = 1
+		TabButton.Image.ImageTransparency = 1
+		TabButton.UIStroke.Transparency = 1
+
+		TabButton.Visible = not Ext or false
+
+		-- Create Elements Page
 		local TabPage = Elements.Template:Clone()
 		TabPage.Name = Name
 		TabPage.Visible = true
+
 		TabPage.LayoutOrder = #Elements:GetChildren() or Ext and 10000
 
 		for _, TemplateElement in ipairs(TabPage:GetChildren()) do
@@ -2022,43 +2086,73 @@ function RayfieldLibrary:CreateWindow(Settings)
 		end
 
 		TabPage.Parent = Elements
-		
-		-- NEXUS-LUA MODIFICATION: Create Sidebar Button instead of the old horizontal tab
-		local TabButton = Instance.new("TextButton")
-		TabButton.Name = Name .. "Button"
-		TabButton.Text = " " .. Name
-		TabButton.Size = UDim2.new(0.9, 0, 0, 35)
-		TabButton.TextXAlignment = Enum.TextXAlignment.Left
-		TabButton.Font = Enum.Font.GothamSemibold
-		TabButton.TextSize = 16
-		TabButton.Parent = SidebarFrame
-		TabButton.Visible = not Ext
-		Instance.new("UICorner", TabButton)
-
-		TabButton.MouseButton1Click:Connect(function()
-			Elements.UIPageLayout:JumpTo(TabPage)
-			
-			if activeTabButton then
-				activeTabButton.BackgroundColor3 = SidebarFrame.BackgroundColor3
-			end
-			activeTabButton = TabButton
-			local theme = RayfieldLibrary.Theme[Settings.Theme or "Default"] or RayfieldLibrary.Theme.Default
-			activeTabButton.BackgroundColor3 = theme.ElementBackgroundHover
-
-			ToggleSidebar(false)
-		end)
-		
-		if not activeTabButton and not Ext then
+		if not FirstTab and not Ext then
 			Elements.UIPageLayout.Animated = false
 			Elements.UIPageLayout:JumpTo(TabPage)
 			Elements.UIPageLayout.Animated = true
-			activeTabButton = TabButton
-			task.wait(0.2)
-			local theme = RayfieldLibrary.Theme[Settings.Theme or "Default"] or RayfieldLibrary.Theme.Default
-			activeTabButton.BackgroundColor3 = theme.ElementBackgroundHover
 		end
-		-- END MODIFICATION
-		
+
+		TabButton.UIStroke.Color = SelectedTheme.TabStroke
+
+		if Elements.UIPageLayout.CurrentPage == TabPage then
+			TabButton.BackgroundColor3 = SelectedTheme.TabBackgroundSelected
+			TabButton.Image.ImageColor3 = SelectedTheme.SelectedTabTextColor
+			TabButton.Title.TextColor3 = SelectedTheme.SelectedTabTextColor
+		else
+			TabButton.BackgroundColor3 = SelectedTheme.TabBackground
+			TabButton.Image.ImageColor3 = SelectedTheme.TabTextColor
+			TabButton.Title.TextColor3 = SelectedTheme.TabTextColor
+		end
+
+
+		-- Animate
+		task.wait(0.1)
+		if FirstTab or Ext then
+			TabButton.BackgroundColor3 = SelectedTheme.TabBackground
+			TabButton.Image.ImageColor3 = SelectedTheme.TabTextColor
+			TabButton.Title.TextColor3 = SelectedTheme.TabTextColor
+			TweenService:Create(TabButton, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0.7}):Play()
+			TweenService:Create(TabButton.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = 0.2}):Play()
+			TweenService:Create(TabButton.Image, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {ImageTransparency = 0.2}):Play()
+			TweenService:Create(TabButton.UIStroke, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {Transparency = 0.5}):Play()
+		elseif not Ext then
+			FirstTab = Name
+			TabButton.BackgroundColor3 = SelectedTheme.TabBackgroundSelected
+			TabButton.Image.ImageColor3 = SelectedTheme.SelectedTabTextColor
+			TabButton.Title.TextColor3 = SelectedTheme.SelectedTabTextColor
+			TweenService:Create(TabButton.Image, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {ImageTransparency = 0}):Play()
+			TweenService:Create(TabButton, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
+			TweenService:Create(TabButton.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
+		end
+
+
+		TabButton.Interact.MouseButton1Click:Connect(function()
+			if Minimised then return end
+			TweenService:Create(TabButton, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
+			TweenService:Create(TabButton.UIStroke, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
+			TweenService:Create(TabButton.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
+			TweenService:Create(TabButton.Image, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {ImageTransparency = 0}):Play()
+			TweenService:Create(TabButton, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.TabBackgroundSelected}):Play()
+			TweenService:Create(TabButton.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextColor3 = SelectedTheme.SelectedTabTextColor}):Play()
+			TweenService:Create(TabButton.Image, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {ImageColor3 = SelectedTheme.SelectedTabTextColor}):Play()
+
+			for _, OtherTabButton in ipairs(Sidebar:GetChildren()) do
+				if OtherTabButton.Name ~= "Template" and OtherTabButton.ClassName == "Frame" and OtherTabButton ~= TabButton and OtherTabButton.Name ~= "Placeholder" then
+					TweenService:Create(OtherTabButton, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.TabBackground}):Play()
+					TweenService:Create(OtherTabButton.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextColor3 = SelectedTheme.TabTextColor}):Play()
+					TweenService:Create(OtherTabButton.Image, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {ImageColor3 = SelectedTheme.TabTextColor}):Play()
+					TweenService:Create(OtherTabButton, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0.7}):Play()
+					TweenService:Create(OtherTabButton.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = 0.2}):Play()
+					TweenService:Create(OtherTabButton.Image, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {ImageTransparency = 0.2}):Play()
+					TweenService:Create(OtherTabButton.UIStroke, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {Transparency = 0.5}):Play()
+				end
+			end
+
+			if Elements.UIPageLayout.CurrentPage ~= TabPage then
+				Elements.UIPageLayout:JumpTo(TabPage)
+			end
+		end)
+
 		local Tab = {}
 
 		-- Button
@@ -2389,6 +2483,12 @@ function RayfieldLibrary:CreateWindow(Settings)
 
 			local SectionValue = {}
 
+			if SDone then
+				local SectionSpace = Elements.Template.SectionSpacing:Clone()
+				SectionSpace.Visible = true
+				SectionSpace.Parent = TabPage
+			end
+
 			local Section = Elements.Template.SectionTitle:Clone()
 			Section.Title.Text = SectionName
 			Section.Visible = true
@@ -2400,6 +2500,8 @@ function RayfieldLibrary:CreateWindow(Settings)
 			function SectionValue:Set(NewSection)
 				Section.Title.Text = NewSection
 			end
+
+			SDone = true
 
 			return SectionValue
 		end
@@ -2765,6 +2867,18 @@ function RayfieldLibrary:CreateWindow(Settings)
 					DropdownOption.BackgroundTransparency = 1
 					DropdownOption.UIStroke.Transparency = 1
 					DropdownOption.Title.TextTransparency = 1
+
+					--local Dropdown = Tab:CreateDropdown({
+					--	Name = "Dropdown Example",
+					--	Options = {"Option 1","Option 2"},
+					--	CurrentOption = {"Option 1"},
+					--  MultipleOptions = true,
+					--	Flag = "Dropdown1",
+					--	Callback = function(TableOfOptions)
+
+					--	end,
+					--})
+
 
 					DropdownOption.Interact.ZIndex = 50
 					DropdownOption.Interact.MouseButton1Click:Connect(function()
@@ -3423,10 +3537,31 @@ function RayfieldLibrary:CreateWindow(Settings)
 			return SliderSettings
 		end
 
+		Rayfield.Main:GetPropertyChangedSignal('BackgroundColor3'):Connect(function()
+			TabButton.UIStroke.Color = SelectedTheme.TabStroke
+
+			if Elements.UIPageLayout.CurrentPage == TabPage then
+				TabButton.BackgroundColor3 = SelectedTheme.TabBackgroundSelected
+				TabButton.Image.ImageColor3 = SelectedTheme.SelectedTabTextColor
+				TabButton.Title.TextColor3 = SelectedTheme.SelectedTabTextColor
+			else
+				TabButton.BackgroundColor3 = SelectedTheme.TabBackground
+				TabButton.Image.ImageColor3 = SelectedTheme.TabTextColor
+				TabButton.Title.TextColor3 = SelectedTheme.TabTextColor
+			end
+		end)
+
 		return Tab
 	end
 
 	Elements.Visible = true
+
+    -- Nexus-Lua: Setup new layout positions and sizes
+    local sidebarWidth = 160
+    Sidebar.Position = UDim2.new(0, 0, 0, 45)
+    Sidebar.Size = UDim2.new(0, sidebarWidth, 1, -45)
+    Elements.Position = UDim2.new(0, sidebarWidth, 0, 45)
+    Elements.Size = UDim2.new(1, -sidebarWidth, 1, -45)
 
 	task.wait(1.1)
 	TweenService:Create(Main, TweenInfo.new(0.7, Enum.EasingStyle.Exponential, Enum.EasingDirection.InOut), {Size = UDim2.new(0, 390, 0, 90)}):Play()
@@ -3435,7 +3570,10 @@ function RayfieldLibrary:CreateWindow(Settings)
 	TweenService:Create(LoadingFrame.Subtitle, TweenInfo.new(0.2, Enum.EasingStyle.Exponential), {TextTransparency = 1}):Play()
 	TweenService:Create(LoadingFrame.Version, TweenInfo.new(0.2, Enum.EasingStyle.Exponential), {TextTransparency = 1}):Play()
 	task.wait(0.1)
-	TweenService:Create(Main, TweenInfo.new(0.6, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Size = useMobileSizing and UDim2.new(0, 500, 0, 275) or UDim2.new(0, 500, 0, 475)}):Play()
+    
+    -- Nexus-Lua: Use new expanded window size for animation
+    local mainWidth, mainHeight = (useMobileSizing and 700 or 700), (useMobileSizing and 300 or 475)
+	TweenService:Create(Main, TweenInfo.new(0.6, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Size = UDim2.new(0, mainWidth, 0, mainHeight)}):Play()
 	TweenService:Create(Main.Shadow.Image, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {ImageTransparency = 0.6}):Play()
 
 	Topbar.BackgroundTransparency = 1
@@ -3444,6 +3582,7 @@ function RayfieldLibrary:CreateWindow(Settings)
 	Topbar.CornerRepair.BackgroundTransparency = 1
 	Topbar.Title.TextTransparency = 1
 	Topbar.Search.ImageTransparency = 1
+    Hamburger.ImageTransparency = 1
 	if Topbar:FindFirstChild('Settings') then
 		Topbar.Settings.ImageTransparency = 1
 	end
@@ -3459,6 +3598,8 @@ function RayfieldLibrary:CreateWindow(Settings)
 	TweenService:Create(Topbar.Divider, TweenInfo.new(1, Enum.EasingStyle.Exponential), {Size = UDim2.new(1, 0, 0, 1)}):Play()
 	TweenService:Create(Topbar.Title, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
 	task.wait(0.05)
+    TweenService:Create(Hamburger, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {ImageTransparency = 0.8}):Play()
+	task.wait(0.05)
 	TweenService:Create(Topbar.Search, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {ImageTransparency = 0.8}):Play()
 	task.wait(0.05)
 	if Topbar:FindFirstChild('Settings') then
@@ -3473,20 +3614,14 @@ function RayfieldLibrary:CreateWindow(Settings)
 	if dragBar then
 		TweenService:Create(dragBarCosmetic, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0.7}):Play()
 	end
-	
-	-- NEXUS-LUA MODIFICATION: Apply theme to sidebar elements after creation
-	SyncTheme()
-	-- END MODIFICATION
 
-	function Window:ModifyTheme(NewTheme)
+	function Window.ModifyTheme(NewTheme)
 		local success = pcall(ChangeTheme, NewTheme)
 		if not success then
 			RayfieldLibrary:Notify({Title = 'Unable to Change Theme', Content = 'We are unable find a theme on file.', Image = 4400704299})
 		else
 			RayfieldLibrary:Notify({Title = 'Theme Changed', Content = 'Successfully changed theme to '..(typeof(NewTheme) == 'string' and NewTheme or 'Custom Theme')..'.', Image = 4483362748})
 		end
-		Settings.Theme = typeof(NewTheme) == 'string' and NewTheme or "Custom"
-		SyncTheme()
 	end
 
 	local success, result = pcall(function()
@@ -3592,12 +3727,19 @@ end)
 if Topbar:FindFirstChild('Settings') then
 	Topbar.Settings.MouseButton1Click:Connect(function()
 		task.spawn(function()
-			Elements.UIPageLayout:JumpTo(Elements['Rayfield Settings'])
-			-- NEXUS-LUA MODIFICATION: Hide sidebar when settings is clicked
-			if isSidebarVisible then
-				HamburgerButton.MouseButton1Click:Fire()
+			for _, OtherTabButton in ipairs(Sidebar:GetChildren()) do
+				if OtherTabButton.Name ~= "Template" and OtherTabButton.ClassName == "Frame" and OtherTabButton ~= TabButton and OtherTabButton.Name ~= "Placeholder" then
+					TweenService:Create(OtherTabButton, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.TabBackground}):Play()
+					TweenService:Create(OtherTabButton.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextColor3 = SelectedTheme.TabTextColor}):Play()
+					TweenService:Create(OtherTabButton.Image, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {ImageColor3 = SelectedTheme.TabTextColor}):Play()
+					TweenService:Create(OtherTabButton, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0.7}):Play()
+					TweenService:Create(OtherTabButton.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = 0.2}):Play()
+					TweenService:Create(OtherTabButton.Image, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {ImageTransparency = 0.2}):Play()
+					TweenService:Create(OtherTabButton.UIStroke, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {Transparency = 0.5}):Play()
+				end
 			end
-			-- END MODIFICATION
+
+			Elements.UIPageLayout:JumpTo(Elements['Rayfield Settings'])
 		end)
 	end)
 
@@ -3839,6 +3981,47 @@ if useStudio then
 	})
 
 
+	--Window.ModifyTheme({
+	--	TextColor = Color3.fromRGB(50, 55, 60),
+	--	Background = Color3.fromRGB(240, 245, 250),
+	--	Topbar = Color3.fromRGB(215, 225, 235),
+	--	Shadow = Color3.fromRGB(200, 210, 220),
+
+	--	NotificationBackground = Color3.fromRGB(210, 220, 230),
+	--	NotificationActionsBackground = Color3.fromRGB(225, 230, 240),
+
+	--	TabBackground = Color3.fromRGB(200, 210, 220),
+	--	TabStroke = Color3.fromRGB(180, 190, 200),
+	--	TabBackgroundSelected = Color3.fromRGB(175, 185, 200),
+	--	TabTextColor = Color3.fromRGB(50, 55, 60),
+	--	SelectedTabTextColor = Color3.fromRGB(30, 35, 40),
+
+	--	ElementBackground = Color3.fromRGB(210, 220, 230),
+	--	ElementBackgroundHover = Color3.fromRGB(220, 230, 240),
+	--	SecondaryElementBackground = Color3.fromRGB(200, 210, 220),
+	--	ElementStroke = Color3.fromRGB(190, 200, 210),
+	--	SecondaryElementStroke = Color3.fromRGB(180, 190, 200),
+
+	--	SliderBackground = Color3.fromRGB(200, 220, 235),  -- Lighter shade
+	--	SliderProgress = Color3.fromRGB(70, 130, 180),
+	--	SliderStroke = Color3.fromRGB(150, 180, 220),
+
+	--	ToggleBackground = Color3.fromRGB(210, 220, 230),
+	--	ToggleEnabled = Color3.fromRGB(70, 160, 210),
+	--	ToggleDisabled = Color3.fromRGB(180, 180, 180),
+	--	ToggleEnabledStroke = Color3.fromRGB(60, 150, 200),
+	--	ToggleDisabledStroke = Color3.fromRGB(140, 140, 140),
+	--	ToggleEnabledOuterStroke = Color3.fromRGB(100, 120, 140),
+	--	ToggleDisabledOuterStroke = Color3.fromRGB(120, 120, 130),
+
+	--	DropdownSelected = Color3.fromRGB(220, 230, 240),
+	--	DropdownUnselected = Color3.fromRGB(200, 210, 220),
+
+	--	InputBackground = Color3.fromRGB(220, 230, 240),
+	--	InputStroke = Color3.fromRGB(180, 190, 200),
+	--	PlaceholderColor = Color3.fromRGB(150, 150, 150)
+	--})
+
 	local Keybind = Tab:CreateKeybind({
 		Name = "Keybind Example",
 		CurrentKeybind = "Q",
@@ -3874,7 +4057,7 @@ end
 -- end
 
 task.delay(4, function()
-	RayfieldLibrary:LoadConfiguration()
+	RayfieldLibrary.LoadConfiguration()
 	if Main:FindFirstChild('Notice') and Main.Notice.Visible then
 		TweenService:Create(Main.Notice, TweenInfo.new(0.5, Enum.EasingStyle.Exponential, Enum.EasingDirection.InOut), {Size = UDim2.new(0, 100, 0, 25), Position = UDim2.new(0.5, 0, 0, -100), BackgroundTransparency = 1}):Play()
 		TweenService:Create(Main.Notice.Title, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {TextTransparency = 1}):Play()
@@ -3885,3 +4068,4 @@ task.delay(4, function()
 end)
 
 return RayfieldLibrary
+```
