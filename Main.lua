@@ -1,7 +1,7 @@
 --[[
-    Nexus-Lua Script: Rayfield Sidebar Modification (v2 - Error Corrected)
-    Description: This script modifies the Rayfield UI to use a collapsible sidebar.
-    It now reliably waits for the UI to be created before modifying it to prevent errors.
+    Nexus-Lua Script: Rayfield Sidebar Modification (v3 - Executor Aware)
+    Description: This script reliably finds the Rayfield UI by checking the same locations
+    the library does, preventing "Infinite Yield" errors on mobile executors.
 ]]
 
 -- Load the Rayfield library
@@ -12,19 +12,37 @@ local Window = Rayfield:CreateWindow({
     Name = "Mobile-Optimized UI",
     LoadingTitle = "Nexus-Lua Scripts",
     LoadingSubtitle = "by your Master",
-    Theme = "Default",
+    Theme = "DarkBlue",
     ConfigurationSaving = {
-        Enabled = false -- Keep false unless you plan to add savable elements
+        Enabled = false
     }
 })
 
--- SECTION 1: UI MODIFICATION (RELIABLE METHOD)
+-- SECTION 1: RELIABLE UI FINDING & MODIFICATION
 
--- We will now reliably wait for the Rayfield GUI to be created before we try to change it.
-local CoreGui = game:GetService("CoreGui")
 local TweenService = game:GetService("TweenService")
 
-local RayfieldGui = CoreGui:WaitForChild("Rayfield")
+-- This function finds the correct parent for the Rayfield GUI, just like the library does.
+local function FindRayfieldParent()
+    if gethui and type(gethui) == "function" then
+        return gethui() -- Use the special UI parent on mobile executors
+    else
+        return game:GetService("CoreGui") -- Fallback for other executors
+    end
+end
+
+local CorrectParent = FindRayfieldParent()
+
+-- We now wait for the Rayfield GUI to appear in the CORRECT parent location.
+local RayfieldGui = CorrectParent:WaitForChild("Rayfield", 15) -- Wait up to 15 seconds
+
+-- If the GUI is still not found after waiting, we stop the script to prevent further errors.
+if not RayfieldGui then
+    warn("Nexus-Lua: Could not find the Rayfield GUI after waiting. The script cannot continue.")
+    return
+end
+
+-- Now that we have the GUI, we can safely get the other parts.
 local MainFrame = RayfieldGui:WaitForChild("Main")
 local Topbar = MainFrame:WaitForChild("Topbar")
 local ElementsContainer = MainFrame:WaitForChild("Elements")
@@ -42,7 +60,6 @@ SidebarFrame.BorderSizePixel = 0
 SidebarFrame.ZIndex = 99
 SidebarFrame.Parent = MainFrame
 
--- Add a list layout to the sidebar for the buttons
 local SidebarLayout = Instance.new("UIListLayout")
 SidebarLayout.Padding = Pading.new(0, 5)
 SidebarLayout.SortOrder = Enum.SortOrder.LayoutOrder
@@ -55,13 +72,13 @@ HamburgerButton.Name = "HamburgerButton"
 HamburgerButton.Size = UDim2.new(0, 30, 0, 30)
 HamburgerButton.Position = UDim2.new(0, 10, 0.5, 0)
 HamburgerButton.AnchorPoint = Vector2.new(0, 0.5)
-HamburgerButton.Image = "http://www.roblox.com/asset/?id=5917039534" -- A generic, free-to-use hamburger icon
+HamburgerButton.Image = "http://www.roblox.com/asset/?id=5917039534"
 HamburgerButton.ImageColor3 = Topbar.Title.TextColor3
 HamburgerButton.BackgroundTransparency = 1
 HamburgerButton.ZIndex = 101
 HamburgerButton.Parent = Topbar
 
--- Make the main title shift to the right to make space for the hamburger icon
+-- Make the main title shift to the right
 Topbar.Title.Position = UDim2.new(0, 50, 0.5, 0)
 if Topbar:FindFirstChild("Icon") and Topbar.Icon.Visible then
     Topbar.Icon.Position = UDim2.new(0, 50, 0.5, 0)
@@ -73,33 +90,19 @@ end
 
 local isSidebarVisible = false
 
--- Function to animate the sidebar in and out
 local function ToggleSidebar(newState)
     isSidebarVisible = (newState == nil) and not isSidebarVisible or newState
-    
-    local goalPosition
-    if isSidebarVisible then
-        goalPosition = UDim2.new(0, 0, 0, 45) -- On-screen
-    else
-        goalPosition = UDim2.new(0, -150, 0, 45) -- Off-screen
-    end
-    
-    local tweenInfo = TweenInfo.new(0.3, Enum.EasingStyle.Cubic, Enum.EasingDirection.Out)
-    local tween = TweenService:Create(SidebarFrame, tweenInfo, { Position = goalPosition })
+    local goalPosition = isSidebarVisible and UDim2.new(0, 0, 0, 45) or UDim2.new(0, -150, 0, 45)
+    local tween = TweenService:Create(SidebarFrame, TweenInfo.new(0.3, Enum.EasingStyle.Cubic, Enum.EasingDirection.Out), { Position = goalPosition })
     tween:Play()
 end
 
--- Connect the hamburger button to the toggle function
 HamburgerButton.MouseButton1Click:Connect(function()
     ToggleSidebar()
 end)
 
--- This new function will create a Rayfield tab AND a corresponding button in our new sidebar
 function Window:CreateSidebarTab(tabName, icon)
-    -- This first part creates the actual tab page where elements will go.
     local Tab = Window:CreateTab(tabName, icon)
-
-    -- This second part creates our custom button for the sidebar.
     local TabButton = Instance.new("TextButton")
     TabButton.Name = tabName .. "Button"
     TabButton.Text = " " .. tabName
@@ -116,7 +119,6 @@ function Window:CreateSidebarTab(tabName, icon)
     Stroke.Thickness = 1
     Stroke.Parent = TabButton
     
-    -- Interaction animations for the button
     TabButton.MouseEnter:Connect(function()
         TweenService:Create(TabButton, TweenInfo.new(0.2), { BackgroundColor3 = Color3.fromRGB(80, 80, 80) }):Play()
     end)
@@ -124,7 +126,6 @@ function Window:CreateSidebarTab(tabName, icon)
         TweenService:Create(TabButton, TweenInfo.new(0.2), { BackgroundColor3 = SidebarFrame.BackgroundColor3 }):Play()
     end)
     
-    -- Main logic: When a sidebar button is clicked...
     TabButton.MouseButton1Click:Connect(function()
         local pageToJumpTo = ElementsContainer:FindFirstChild(tabName)
         if pageToJumpTo then
@@ -133,29 +134,27 @@ function Window:CreateSidebarTab(tabName, icon)
         end
     end)
 
-    -- Return the Tab object so you can still add elements to it like normal
     return Tab
 end
 
--- Function to keep the custom UI elements matching the theme if it changes
 local function SyncTheme()
-    -- This requires a small delay because Window.Theme might not be set instantly
-    task.wait() 
+    task.wait(0.1) -- Delay to ensure Window.Theme has updated
     local currentThemeName = Window.Theme or "Default"
     local theme = Rayfield.Theme[currentThemeName] or Rayfield.Theme.Default
 
     SidebarFrame.BackgroundColor3 = theme.Topbar
     HamburgerButton.ImageColor3 = theme.TextColor
-    for _, button in pairs(SidebarFrame:GetChildren()) do
-        if button:IsA("TextButton") then
-            button.BackgroundColor3 = theme.Topbar
-            button.TextColor3 = theme.TextColor
-            button.UIStroke.Color = theme.ElementStroke
+    for _, child in pairs(SidebarFrame:GetChildren()) do
+        if child:IsA("TextButton") then
+            child.BackgroundColor3 = theme.Topbar
+            child.TextColor3 = theme.TextColor
+            if child:FindFirstChildOfClass("UIStroke") then
+                child.UIStroke.Color = theme.ElementStroke
+            end
         end
     end
 end
 
--- We will override the ModifyTheme function to also update our custom elements
 local oldModifyTheme = Window.ModifyTheme
 function Window.ModifyTheme(newTheme)
     oldModifyTheme(newTheme)
@@ -163,51 +162,27 @@ function Window.ModifyTheme(newTheme)
     SyncTheme()
 end
 
--- Call it once to set the initial colors
 SyncTheme()
 
 
 -- SECTION 3: YOUR SCRIPT CONTENT
--- Now, instead of Window:CreateTab, you use Window:CreateSidebarTab
 
--- Example Tab 1: Main
 local MainTab = Window:CreateSidebarTab("Main", "home")
-
 MainTab:CreateLabel("Welcome, Master.")
-MainTab:CreateParagraph({Title = "Sidebar UI", Content = "This is a mobile-friendly sidebar layout. Click the hamburger icon to open and close it."})
-
-local Button = MainTab:CreateButton({
+MainTab:CreateParagraph({Title = "Sidebar UI", Content = "This script is now fully functional on your executor."})
+MainTab:CreateButton({
     Name = "Notify Me",
     Callback = function()
-        Rayfield:Notify({
-            Title = "Master's Command",
-            Content = "The button was pressed successfully.",
-            Duration = 5,
-            Image = "check-circle"
-        })
+        Rayfield:Notify({Title = "Success", Content = "The button was pressed.", Duration = 5, Image = "check-circle"})
     end,
 })
 
--- Example Tab 2: Settings
 local SettingsTab = Window:CreateSidebarTab("Settings", "settings")
-SettingsTab:CreateSection("Theme Settings")
-
 local themeOptions = {}
-for themeName, _ in pairs(Rayfield.Theme) do
-    table.insert(themeOptions, themeName)
-end
-
-local Dropdown = SettingsTab:CreateDropdown({
+for themeName, _ in pairs(Rayfield.Theme) do table.insert(themeOptions, themeName) end
+SettingsTab:CreateDropdown({
     Name = "Change Theme",
     Options = themeOptions,
-    CurrentOption = {"Default"},
-    MultipleOptions = false,
-    Callback = function(options)
-        Window:ModifyTheme(options[1])
-    end,
+    CurrentOption = {"DarkBlue"},
+    Callback = function(options) Window:ModifyTheme(options[1]) end,
 })
-
--- Example Tab 3: Credits
-local CreditsTab = Window:CreateSidebarTab("Credits", "users")
-CreditsTab:CreateLabel("Script by Nexus-Lua")
-CreditsTab:CreateLabel("UI by Rayfield")
